@@ -1,0 +1,20 @@
+[
+  {
+    "customerId": "USER001",
+    "derivationIndex": 1,
+    "ethereumDepositAddress": "0xE103a7C7F2246188C8Acb5c863c0370f18AF9747",
+    "bnbSmartChainDepositAddress": "0xE103a7C7F2246188C8Acb5c863c0370f18AF9747"
+  },
+  {
+    "customerId": "USER002",
+    "derivationIndex": 2,
+    "ethereumDepositAddress": "0xbd3F127cFa2e40fa0D5Ed85745e8E4d3DF9C2378",
+    "bnbSmartChainDepositAddress": "0xbd3F127cFa2e40fa0D5Ed85745e8E4d3DF9C2378"
+  },
+  {
+    "customerId": "USER003",
+    "derivationIndex": 3,
+    "ethereumDepositAddress": "0x63C12Af00FE10C97D01392310de7816e9880A239",
+    "bnbSmartChainDepositAddress": "0x63C12Af00FE10C97D01392310de7816e9880A239"
+  }
+]

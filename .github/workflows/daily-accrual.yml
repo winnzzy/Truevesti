@@ -1,0 +1,28 @@
+name: Daily Accruals
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # daily at 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  run-accruals:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: daily-accrual
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci
+      - name: Prisma generate
+        run: npx prisma generate --schema=apps/api/prisma/schema.prisma
+      - name: Run daily accruals
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NODE_ENV: production
+        run: npm --workspace apps/api run run:daily-accrual

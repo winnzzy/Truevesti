@@ -1,0 +1,233 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  COMPLIANCE
+  SUPPORT
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum TransactionStatus {
+  PENDING
+  CONFIRMING
+  CONFIRMED
+  REJECTED
+  FAILED
+}
+
+enum InvestmentStatus {
+  ACTIVE
+  MATURED
+  WITHDRAWN
+  CANCELLED
+}
+
+model User {
+  id                String              @id @default(cuid())
+  email             String              @unique
+  phone             String?             @unique
+  passwordHash      String?
+  role              UserRole            @default(USER)
+  emailVerifiedAt   DateTime?
+  phoneVerifiedAt   DateTime?
+  twoFactorEnabled  Boolean             @default(false)
+  riskConsentAt     DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  profile           Profile?
+  sessions          Session[]
+  otpCodes          OtpCode[]
+  deposits          Deposit[]
+  withdrawals       Withdrawal[]
+  investments       Investment[]
+  kycChecks         KycCheck[]
+  auditLogs         AuditLog[]
+  tickets           SupportTicket[]
+  notifications     Notification[]
+  consents          Consent[]
+}
+
+model Profile {
+  id        String  @id @default(cuid())
+  userId    String  @unique
+  firstName String?
+  lastName  String?
+  country   String?
+  timezone  String?
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id               String   @id @default(cuid())
+  userId           String
+  refreshTokenHash String
+  ipAddress        String?
+  userAgent        String?
+  deviceId         String?
+  revokedAt        DateTime?
+  expiresAt        DateTime
+  createdAt        DateTime @default(now())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  userId    String
+  purpose   String
+  codeHash  String
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model InvestmentPlan {
+  id              String       @id @default(cuid())
+  name            String
+  minDepositUsd   Decimal      @db.Decimal(18, 2)
+  maxDepositUsd   Decimal      @db.Decimal(18, 2)
+  durationDays    Int
+  estimatedYieldMin Decimal    @db.Decimal(8, 4)
+  estimatedYieldMax Decimal    @db.Decimal(8, 4)
+  riskLevel       String
+  assetAllocation String
+  supportedAssets String[]
+  isActive        Boolean      @default(true)
+  investments     Investment[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model Investment {
+  id             String           @id @default(cuid())
+  userId         String
+  planId         String
+  principalUsd   Decimal          @db.Decimal(18, 2)
+  assetSymbol    String
+  status         InvestmentStatus @default(ACTIVE)
+  startedAt      DateTime         @default(now())
+  maturesAt      DateTime
+  withdrawnAt    DateTime?
+  disclosureHash String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan           InvestmentPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  withdrawals    Withdrawal[]
+  accruals       Accrual[]
+}
+
+model Deposit {
+  id              String            @id @default(cuid())
+  userId          String
+  assetSymbol     String
+  network         String
+  provider        String
+  providerAddressId String?
+  depositAddress  String
+  txHash          String?           @unique
+  amountCrypto    Decimal?          @db.Decimal(36, 18)
+  amountUsd       Decimal?          @db.Decimal(18, 2)
+  confirmations   Int               @default(0)
+  status          TransactionStatus @default(PENDING)
+  createdAt       DateTime          @default(now())
+  confirmedAt     DateTime?
+  user            User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+}
+
+model Withdrawal {
+  id              String            @id @default(cuid())
+  userId          String
+  investmentId    String?
+  assetSymbol     String
+  network         String
+  destination     String
+  amountUsd       Decimal           @db.Decimal(18, 2)
+  txHash          String?           @unique
+  status          TransactionStatus @default(PENDING)
+  riskDecision    String?
+  approvedById    String?
+  createdAt       DateTime          @default(now())
+  processedAt     DateTime?
+  user            User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  investment      Investment?       @relation(fields: [investmentId], references: [id], onDelete: SetNull)
+}
+
+model KycCheck {
+  id          String             @id @default(cuid())
+  userId      String
+  provider    String
+  providerRef String?
+  status      VerificationStatus @default(PENDING)
+  reason      String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SupportTicket {
+  id        String   @id @default(cuid())
+  userId    String
+  subject   String
+  message   String   @db.Text
+  status    String   @default("OPEN")
+  priority  String   @default("NORMAL")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Consent {
+  id         String   @id @default(cuid())
+  userId     String
+  type       String
+  version    String
+  acceptedAt DateTime @default(now())
+  ipAddress  String?
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+}
+
+model Accrual {
+  id           String   @id @default(cuid())
+  investmentId String
+  amountUsd    Decimal  @db.Decimal(18, 2)
+  date         DateTime
+  createdAt    DateTime @default(now())
+
+  investment   Investment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+
+  @@unique([investmentId, date])
+}

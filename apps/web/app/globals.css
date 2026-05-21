@@ -1,0 +1,286 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background:
+    linear-gradient(180deg, rgba(8, 17, 31, 0.94), rgba(9, 18, 32, 1)),
+    #07111f;
+  color: #f8fafc;
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px);
+}
+
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-mint focus:ring-offset-2 focus:ring-offset-ink;
+}
+
+.animate-rise {
+  animation: rise-in 720ms ease both;
+}
+
+.hero-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  perspective: 1100px;
+  background:
+    linear-gradient(115deg, rgba(8, 17, 31, 0.78), rgba(8, 17, 31, 0.34) 46%, rgba(11, 25, 41, 0.88)),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.045) 0 1px, transparent 1px 92px);
+}
+
+.hero-scene::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 36%;
+  background: linear-gradient(180deg, transparent, #08111f 86%);
+  pointer-events: none;
+}
+
+.hero-grid {
+  position: absolute;
+  inset: 18% -10% -18%;
+  transform: rotateX(66deg) rotateZ(-7deg);
+  transform-origin: center;
+  background:
+    linear-gradient(rgba(104, 241, 196, 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(104, 241, 196, 0.18) 1px, transparent 1px);
+  background-size: 70px 70px;
+  mask-image: linear-gradient(90deg, transparent, black 18%, black 82%, transparent);
+  animation: grid-drift 14s linear infinite;
+}
+
+.signal {
+  position: absolute;
+  height: 2px;
+  width: 34vw;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(104, 241, 196, 0.86), rgba(216, 182, 107, 0.64), transparent);
+  opacity: 0.85;
+  animation: signal-scan 6s ease-in-out infinite;
+}
+
+.signal-a { left: 44%; top: 28%; }
+.signal-b { left: 51%; top: 53%; animation-delay: 1.4s; }
+.signal-c { left: 35%; top: 71%; animation-delay: 2.8s; }
+
+.vault {
+  position: absolute;
+  right: clamp(2rem, 9vw, 10rem);
+  top: 22%;
+  width: min(36vw, 480px);
+  aspect-ratio: 1;
+  transform-style: preserve-3d;
+  transition: transform 180ms ease;
+  animation: vault-float 6s ease-in-out infinite;
+}
+
+.vault-face {
+  position: absolute;
+  inset: 17%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.045);
+  transform-style: preserve-3d;
+}
+
+.vault-top { transform: rotateX(62deg) translateZ(120px); }
+.vault-left { transform: rotateY(-62deg) translateZ(120px); }
+.vault-right { transform: rotateY(62deg) translateZ(120px); }
+
+.vault-core {
+  position: absolute;
+  inset: 18%;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(104, 241, 196, 0.28);
+  background:
+    linear-gradient(135deg, rgba(104, 241, 196, 0.13), rgba(255, 255, 255, 0.04)),
+    rgba(8, 17, 31, 0.72);
+  box-shadow: 0 30px 90px rgba(104, 241, 196, 0.16);
+  transform: translateZ(140px);
+}
+
+.vault-ring {
+  position: absolute;
+  inset: 16%;
+  border: 2px solid rgba(104, 241, 196, 0.34);
+  border-top-color: rgba(216, 182, 107, 0.86);
+  border-radius: 999px;
+  animation: spin 12s linear infinite;
+}
+
+.vault-ring-two {
+  inset: 29%;
+  animation-direction: reverse;
+  animation-duration: 8s;
+}
+
+.vault-chip {
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  background: linear-gradient(145deg, #68f1c4, #d8b66b);
+  color: #08111f;
+  font-weight: 800;
+  box-shadow: 0 18px 50px rgba(216, 182, 107, 0.2);
+}
+
+.floating-rail {
+  position: absolute;
+  display: flex;
+  min-width: 138px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(8, 17, 31, 0.74);
+  padding: 12px 14px;
+  color: #cbd5e1;
+  backdrop-filter: blur(16px);
+  animation: rail-float 5s ease-in-out infinite;
+}
+
+.floating-rail strong {
+  color: #68f1c4;
+}
+
+.ticker-track {
+  position: absolute;
+  right: 0;
+  bottom: 18%;
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  justify-content: flex-end;
+  animation: ticker 22s linear infinite;
+}
+
+.ticker-track span {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 10px 16px;
+  color: #e2e8f0;
+  white-space: nowrap;
+}
+
+.plan-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 220ms ease, border-color 220ms ease, background 220ms ease;
+}
+
+.plan-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(125deg, transparent 0 42%, rgba(255, 255, 255, 0.13) 50%, transparent 58% 100%);
+  transform: translateX(-120%);
+  transition: transform 540ms ease;
+}
+
+.plan-card:hover {
+  transform: translateY(-6px) rotateX(2deg);
+  border-color: rgba(104, 241, 196, 0.35);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.plan-card:hover::before {
+  transform: translateX(120%);
+}
+
+.plan-meter {
+  box-shadow: 0 0 26px rgba(104, 241, 196, 0.5);
+  animation: meter-pulse 2.8s ease-in-out infinite;
+}
+
+.feature-strip {
+  border-left: 2px solid rgba(104, 241, 196, 0.55);
+  padding-left: 16px;
+}
+
+.feature-strip span {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.feature-strip p {
+  margin-top: 6px;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes grid-drift {
+  from { background-position: 0 0; }
+  to { background-position: 140px 140px; }
+}
+
+@keyframes signal-scan {
+  0%, 100% { transform: translateX(-18%) scaleX(0.72); opacity: 0.2; }
+  50% { transform: translateX(12%) scaleX(1); opacity: 0.95; }
+}
+
+@keyframes vault-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -16px; }
+}
+
+@keyframes rail-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ticker {
+  from { transform: translateX(18%); }
+  to { transform: translateX(-22%); }
+}
+
+@keyframes meter-pulse {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
+}
+
+@media (max-width: 900px) {
+  .vault {
+    right: -6rem;
+    top: 38%;
+    width: 430px;
+    opacity: 0.58;
+  }
+
+  .floating-rail {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
+}

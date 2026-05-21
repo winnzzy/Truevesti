@@ -70,8 +70,8 @@ investmentRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
   }
 
   const maturesAt = new Date(Date.now() + plan.durationDays * 24 * 60 * 60 * 1000);
-  const investment = await prisma.$transaction(async (tx) => {
-    const created = await tx.investment.create({
+  await prisma.$transaction(async (tx: any) => {
+  const investment = await tx.investment.create({
       data: {
         userId: req.user!.id,
         planId: plan.id,
@@ -87,7 +87,7 @@ investmentRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
         actorId: req.user!.id,
         action: "INVESTMENT_CREATED",
         entity: "Investment",
-        entityId: created.id,
+        entityId: investment.id,
         ipAddress: req.ip
       }
     });
@@ -98,7 +98,7 @@ investmentRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
         body: `${plan.name} investment is active and scheduled to mature on ${maturesAt.toISOString().slice(0, 10)}.`
       }
     });
-    return created;
+    return investment;
   });
-  res.status(201).json({ investment: enrichInvestment(investment) });
+  res.status(201).json({ message: "Investment created successfully" });
 });

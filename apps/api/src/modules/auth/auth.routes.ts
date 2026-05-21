@@ -200,7 +200,7 @@ authRouter.post("/otp/verify", async (req, res) => {
   });
   if (!otp || !(await argon2.verify(otp.codeHash, input.code))) return res.status(400).json({ error: "Invalid code" });
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     await tx.otpCode.update({ where: { id: otp.id }, data: { consumedAt: new Date() } });
 
     if (input.purpose === "SIGNUP_VERIFY") {

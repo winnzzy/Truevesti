@@ -22,7 +22,8 @@ supportRouter.get("/tickets", requireAuth, async (req: AuthRequest, res) => {
 
 supportRouter.post("/tickets", requireAuth, async (req: AuthRequest, res) => {
   const input = ticketSchema.parse(req.body);
-  const ticket = await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
+  const ticket = await prisma.$transaction(async () => {
     const created = await tx.supportTicket.create({
       data: {
         userId: req.user!.id,
@@ -48,4 +49,5 @@ supportRouter.post("/tickets", requireAuth, async (req: AuthRequest, res) => {
     return created;
   });
   res.status(201).json({ ticket });
+});
 });

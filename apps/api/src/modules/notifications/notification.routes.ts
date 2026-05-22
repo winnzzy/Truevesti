@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { prisma } from "../../lib/prisma.js";
-import { requireAuth, type AuthRequest } from "../../middleware/auth.js";
+import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
 export const notificationRouter = Router();
 
-notificationRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
+notificationRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const notifications = await prisma.notification.findMany({
     where: { userId: req.user!.id },
     orderBy: { createdAt: "desc" },

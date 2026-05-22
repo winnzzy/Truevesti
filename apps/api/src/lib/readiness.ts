@@ -62,9 +62,16 @@ export function getReadinessChecks(): ReadinessCheck[] {
     {
       key: "email-provider",
       label: "Email provider",
-      ok: emailProvider !== "console" && (hasValue("RESEND_API_KEY") || hasValue("SENDGRID_API_KEY")),
-      severity: "warning",
-      detail: "Configure Resend, SendGrid, or SES credentials for customer email delivery."
+      ok:
+        emailProvider === "resend"
+          ? hasValue("RESEND_API_KEY") && hasValue("EMAIL_FROM")
+          : emailProvider === "sendgrid"
+            ? hasValue("SENDGRID_API_KEY") && hasValue("EMAIL_FROM")
+            : emailProvider === "smtp"
+              ? hasValue("SMTP_HOST") && hasValue("SMTP_USER") && hasValue("SMTP_PASS") && hasValue("EMAIL_FROM")
+              : emailProvider === "console",
+      severity: emailProvider === "console" ? "warning" : "critical",
+      detail: "Configure Resend, SendGrid, or SMTP credentials (plus EMAIL_FROM) for OTP and account emails."
     },
     {
       key: "oauth",

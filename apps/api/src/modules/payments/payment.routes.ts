@@ -2,11 +2,11 @@ import { Router } from "express";
 import { z } from "zod";
 import { createDepositAddress, verifyChainWebhook } from "../../lib/crypto-provider.js";
 import { prisma } from "../../lib/prisma.js";
-import { requireAuth, type AuthRequest } from "../../middleware/auth.js";
+import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
 export const paymentRouter = Router();
 
-paymentRouter.get("/deposits", requireAuth, async (req: AuthRequest, res) => {
+paymentRouter.get("/deposits", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const deposits = await prisma.deposit.findMany({
     where: { userId: req.user!.id },
     orderBy: { createdAt: "desc" },
@@ -15,7 +15,7 @@ paymentRouter.get("/deposits", requireAuth, async (req: AuthRequest, res) => {
   res.json({ deposits });
 });
 
-paymentRouter.post("/deposit-address", requireAuth, async (req: AuthRequest, res) => {
+paymentRouter.post("/deposit-address", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const input = z.object({
     assetSymbol: z.enum(["BTC", "ETH", "USDT", "USDC", "SOL", "BNB"]),
     network: z.string().min(2)

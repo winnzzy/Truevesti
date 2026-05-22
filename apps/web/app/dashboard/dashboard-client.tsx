@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card } from "@/components/card";
 import { Nav } from "@/components/nav";
 import { PortfolioChart } from "@/components/portfolio-chart";
@@ -83,6 +84,7 @@ function money(value: string | number | null | undefined) {
 }
 
 export function DashboardClient() {
+  const router = useRouter();
   const [session, setSession] = useState<AuthSession | null>(() => readSession());
   const [data, setData] = useState<DashboardData>(emptyData);
   const [selectedPlanId, setSelectedPlanId] = useState("");
@@ -101,6 +103,12 @@ export function DashboardClient() {
   const [isLoading, setIsLoading] = useState(true);
 
   const headers = useMemo(() => session ? { Authorization: `Bearer ${session.accessToken}` } : undefined, [session]);
+
+  useEffect(() => {
+    if (!session?.accessToken) {
+      router.replace("/auth/login");
+    }
+  }, [router, session]);
 
   const load = useCallback(async () => {
     try {

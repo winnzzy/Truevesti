@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import argon2 from "argon2";
+import { hashPassword } from "../src/lib/password.js";
 
 const prisma = new PrismaClient();
 const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
@@ -67,7 +67,7 @@ if (adminEmail && adminPassword) {
     update: { role: "ADMIN" },
     create: {
       email: adminEmail,
-      passwordHash: await argon2.hash(adminPassword),
+      passwordHash: await hashPassword(adminPassword),
       role: "ADMIN",
       emailVerifiedAt: new Date(),
       riskConsentAt: new Date(),

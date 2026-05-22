@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
-import { requireAuth, type AuthRequest } from "../../middleware/auth.js";
+import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
 export const investmentRouter = Router();
 
@@ -42,7 +42,7 @@ investmentRouter.get("/plans", async (_req, res) => {
   res.json({ plans });
 });
 
-investmentRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
+investmentRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const investments = await prisma.investment.findMany({
     where: { userId: req.user!.id },
     include: { plan: true },
@@ -52,7 +52,7 @@ investmentRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   res.json({ investments: investments.map(enrichInvestment) });
 });
 
-investmentRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
+investmentRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const input = z.object({
     planId: z.string(),
     principalUsd: z.number().positive(),

@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
-import { requireAuth, type AuthRequest } from "../../middleware/auth.js";
+import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
 export const withdrawalRouter = Router();
 
-withdrawalRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
+withdrawalRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const withdrawals = await prisma.withdrawal.findMany({
     where: { userId: req.user!.id },
     include: { investment: { include: { plan: true } } },
@@ -15,7 +15,7 @@ withdrawalRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   res.json({ withdrawals });
 });
 
-withdrawalRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
+withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const input = z.object({
     investmentId: z.string(),
     assetSymbol: z.enum(["BTC", "ETH", "USDT", "USDC", "SOL", "BNB"]),

@@ -23,11 +23,14 @@ export default function HomePage() {
               </p>
               <div className="animate-rise mt-8 max-w-2xl rounded-3xl border border-white/10 bg-white/5 p-6 text-slate-200 shadow-[0_32px_80px_rgba(0,0,0,0.18)] [animation-delay:320ms]">
                 <p className="text-sm text-slate-300">
-                  Start by signing in or creating an account on the auth page. You can register with email and password or use Google, Apple, or Microsoft.
+                  Create an account with your email, verify a one-time code, then sign in to manage investments and deposits.
                 </p>
                 <div className="mt-6 flex flex-wrap gap-3">
-                  <Link className="focus-ring rounded-md bg-mint px-5 py-3 font-semibold text-ink shadow-[0_18px_60px_rgba(104,241,196,.24)] transition hover:-translate-y-0.5 hover:bg-white" href="/auth">
-                    Sign up / Sign in
+                  <Link className="focus-ring rounded-md bg-mint px-5 py-3 font-semibold text-ink shadow-[0_18px_60px_rgba(104,241,196,.24)] transition hover:-translate-y-0.5 hover:bg-white" href="/auth/signup">
+                    Sign up
+                  </Link>
+                  <Link className="focus-ring rounded-md border border-white/20 px-5 py-3 font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/10" href="/auth/login">
+                    Sign in
                   </Link>
                   <Link className="focus-ring rounded-md border border-white/20 px-5 py-3 font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/10" href="/plans">
                     View plans

@@ -1,13 +1,20 @@
 export const API_URL = getApiUrl();
 
 function getApiUrl() {
+  const configured = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
+  if (configured) return configured;
+
   if (typeof window !== "undefined") {
-    const host = window.location.hostname;
-    const protocol = window.location.protocol;
-    return process.env.NEXT_PUBLIC_API_URL ?? `${protocol}//${host}:4000`;
+    const { hostname, protocol } = window.location;
+    if (hostname === "localhost" || hostname === "127.0.0.1") {
+      return `${protocol}//${hostname}:4000`;
+    }
+    console.error(
+      "NEXT_PUBLIC_API_URL is missing. In Vercel, set it to your Render API URL (e.g. https://your-app.onrender.com)."
+    );
   }
 
-  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+  return "http://localhost:4000";
 }
 
 export type AuthUser = {
@@ -26,7 +33,23 @@ export type AuthSession = {
 
 export type ApiError = {
   error?: string;
+  code?: string;
+  details?: Record<string, string[] | undefined>;
 };
+
+export class ApiRequestError extends Error {
+  code?: string;
+  status: number;
+  details?: Record<string, string[] | undefined>;
+
+  constructor(message: string, status: number, code?: string, details?: Record<string, string[] | undefined>) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
 
 function buildHeaders(initHeaders: HeadersInit = {}) {
   const headers = new Headers(initHeaders);
@@ -103,9 +126,9 @@ async function requestWithAuth<T>(path: string, init: RequestInit, retry = false
     }
   }
 
-  const data = await parseResponse<T>(response);
+  const data = await parseResponse<T & ApiError>(response);
   if (!response.ok) {
-    throw new Error(data.error ?? "Request failed");
+    throw new ApiRequestError(data.error ?? "Request failed", response.status, data.code, data.details);
   }
   return data;
 }

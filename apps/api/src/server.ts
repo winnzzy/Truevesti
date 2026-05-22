@@ -1,6 +1,7 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import pino from "pino";
+import { ZodError } from "zod";
 import { env } from "./lib/env.js";
 import { applySecurity } from "./middleware/security.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
@@ -30,7 +31,14 @@ app.use("/notifications", notificationRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   logger.error(err);
-  res.status(400).json({ error: "Request could not be processed" });
+  if (err instanceof ZodError) {
+    return res.status(400).json({
+      error: "Validation failed",
+      code: "VALIDATION_ERROR",
+      details: err.flatten().fieldErrors
+    });
+  }
+  res.status(500).json({ error: "Request could not be processed", code: "INTERNAL_ERROR" });
 });
 
 app.listen(env.PORT, () => {

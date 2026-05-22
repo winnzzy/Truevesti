@@ -88,7 +88,7 @@ export function Nav() {
             </button>
           ) : (
             <Link
-              href="/auth"
+              href="/auth/login"
               className="focus-ring hidden rounded-md bg-mint px-4 py-2 text-sm font-semibold text-ink transition hover:bg-white sm:inline-flex"
             >
               Sign in
@@ -133,7 +133,7 @@ export function Nav() {
             ) : (
               <Link
                 className="focus-ring mt-2 rounded-md bg-mint px-3 py-2 font-semibold text-ink"
-                href="/auth"
+                href="/auth/login"
                 onClick={() => setIsOpen(false)}
               >
                 Sign in

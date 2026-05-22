@@ -1,3 +1,6 @@
+/** Production API on Render (override with NEXT_PUBLIC_API_URL in Vercel if needed). */
+export const PRODUCTION_API_URL = "https://truevesti-api.onrender.com";
+
 export const API_URL = getApiUrl();
 
 function getApiUrl() {
@@ -9,12 +12,12 @@ function getApiUrl() {
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return `${protocol}//${hostname}:4000`;
     }
-    console.error(
-      "NEXT_PUBLIC_API_URL is missing. In Vercel, set it to your Render API URL (e.g. https://your-app.onrender.com)."
-    );
+    if (hostname.endsWith(".vercel.app") || hostname.includes("truevesti")) {
+      return PRODUCTION_API_URL;
+    }
   }
 
-  return "http://localhost:4000";
+  return PRODUCTION_API_URL;
 }
 
 export type AuthUser = {

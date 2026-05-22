@@ -3,6 +3,7 @@ import cookieParser from "cookie-parser";
 import pino from "pino";
 import { ZodError } from "zod";
 import { env } from "./lib/env.js";
+import { validateEmailConfiguration } from "./lib/email-config.js";
 import { applySecurity } from "./middleware/security.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { investmentRouter } from "./modules/investments/investment.routes.js";
@@ -40,6 +41,13 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   }
   res.status(500).json({ error: "Request could not be processed", code: "INTERNAL_ERROR" });
 });
+
+try {
+  const emailConfig = validateEmailConfiguration();
+  logger.info({ email: emailConfig }, "Email provider ready");
+} catch (err) {
+  logger.warn({ err }, "Email provider is not fully configured — signup OTP emails will fail until env vars are set");
+}
 
 app.listen(env.PORT, () => {
   logger.info(`Truevesti API listening on ${env.PORT}`);

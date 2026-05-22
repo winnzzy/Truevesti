@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { EmailConfigurationError, getEmailProviderName, validateEmailConfiguration } from "./email-config.js";
 
 export type EmailMessage = {
   to: string;
@@ -6,17 +7,10 @@ export type EmailMessage = {
   html: string;
 };
 
-function getEmailProvider() {
-  return (process.env.EMAIL_PROVIDER || "console").toLowerCase();
-}
-
 async function sendWithResend(message: EmailMessage) {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  const from = process.env.EMAIL_FROM?.trim() || "Truevesti <onboarding@resend.dev>";
-
-  if (!apiKey) {
-    throw new Error("RESEND_API_KEY is required when EMAIL_PROVIDER=resend");
-  }
+  const config = validateEmailConfiguration();
+  const apiKey = process.env.RESEND_API_KEY!.trim();
+  const from = config.mode === "resend" ? config.from : "Truevesti <onboarding@resend.dev>";
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -39,12 +33,9 @@ async function sendWithResend(message: EmailMessage) {
 }
 
 async function sendWithSendGrid(message: EmailMessage) {
-  const apiKey = process.env.SENDGRID_API_KEY?.trim();
-  const from = process.env.EMAIL_FROM?.trim();
-
-  if (!apiKey || !from) {
-    throw new Error("SENDGRID_API_KEY and EMAIL_FROM are required when EMAIL_PROVIDER=sendgrid");
-  }
+  validateEmailConfiguration();
+  const apiKey = process.env.SENDGRID_API_KEY!.trim();
+  const from = process.env.EMAIL_FROM!.trim();
 
   const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
@@ -67,15 +58,12 @@ async function sendWithSendGrid(message: EmailMessage) {
 }
 
 async function sendWithSmtp(message: EmailMessage) {
-  const host = process.env.SMTP_HOST?.trim();
+  validateEmailConfiguration();
+  const host = process.env.SMTP_HOST!.trim();
   const port = Number(process.env.SMTP_PORT || 587);
-  const user = process.env.SMTP_USER?.trim();
-  const pass = process.env.SMTP_PASS?.trim();
-  const from = process.env.EMAIL_FROM?.trim();
-
-  if (!host || !user || !pass || !from) {
-    throw new Error("SMTP_HOST, SMTP_USER, SMTP_PASS, and EMAIL_FROM are required when EMAIL_PROVIDER=smtp");
-  }
+  const user = process.env.SMTP_USER!.trim();
+  const pass = process.env.SMTP_PASS!.trim();
+  const from = process.env.EMAIL_FROM!.trim();
 
   const transporter = nodemailer.createTransport({
     host,
@@ -93,7 +81,7 @@ async function sendWithSmtp(message: EmailMessage) {
 }
 
 export async function sendEmail(message: EmailMessage) {
-  const provider = getEmailProvider();
+  const provider = getEmailProviderName();
 
   if (provider === "console") {
     console.info({ to: message.to, subject: message.subject }, "email queued (console provider)");
@@ -115,5 +103,7 @@ export async function sendEmail(message: EmailMessage) {
     return;
   }
 
-  throw new Error(`Unsupported EMAIL_PROVIDER: ${provider}. Use resend, sendgrid, smtp, or console.`);
+  throw new EmailConfigurationError(`Unsupported EMAIL_PROVIDER: ${provider}. Use resend, sendgrid, smtp, or console.`);
 }
+
+export { validateEmailConfiguration, EmailConfigurationError } from "./email-config.js";

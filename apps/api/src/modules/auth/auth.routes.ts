@@ -96,7 +96,13 @@ const signupHandler = async (req: Request, res: Response) => {
       }
     });
 
-    const { expiresAt } = await createAndSendSignupOtp(user.id, user.email, env.OTP_EXPIRY_MINUTES);
+    let expiresAt: Date;
+    try {
+      ({ expiresAt } = await createAndSendSignupOtp(user.id, user.email, env.OTP_EXPIRY_MINUTES));
+    } catch (otpErr) {
+      await prisma.user.delete({ where: { id: user.id } }).catch(() => undefined);
+      throw otpErr;
+    }
 
     return res.status(201).json({
       message: "Account created. Check your email for a 6-digit verification code.",

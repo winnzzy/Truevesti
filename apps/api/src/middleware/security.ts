@@ -7,7 +7,10 @@ import { env } from "../lib/env.js";
 export function applySecurity(app: Express) {
   app.set("trust proxy", 1);
   app.use(helmet());
-  app.use(cors({ origin: env.WEB_ORIGIN, credentials: true }));
+  app.use(cors({
+  origin: process.env.WEB_ORIGIN || "https://truevesti-web.vercel.app",
+  credentials: true
+}));
   app.use(
     rateLimit({
       windowMs: 15 * 60 * 1000,

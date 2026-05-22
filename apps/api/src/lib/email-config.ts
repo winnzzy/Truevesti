@@ -26,7 +26,8 @@ export function validateEmailConfiguration() {
         "RESEND_API_KEY is missing. Add it in Render environment variables, or set EMAIL_PROVIDER=console to log OTP codes in server logs."
       );
     }
-    return { ok: true as const, provider, mode: "resend" as const, from: from || "Truevesti <onboarding@resend.dev>" };
+    // Resend test sender — use plain address; display names can fail validation on some accounts.
+    return { ok: true as const, provider, mode: "resend" as const, from: from || "onboarding@resend.dev" };
   }
 
   if (provider === "sendgrid") {

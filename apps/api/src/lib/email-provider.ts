@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { EmailConfigurationError, getEmailProviderName, validateEmailConfiguration } from "./email-config.js";
+import { mapResendFailure } from "./email-delivery-error.js";
 
 export type EmailMessage = {
   to: string;
@@ -10,7 +11,7 @@ export type EmailMessage = {
 async function sendWithResend(message: EmailMessage) {
   const config = validateEmailConfiguration();
   const apiKey = process.env.RESEND_API_KEY!.trim();
-  const from = config.mode === "resend" ? config.from : "Truevesti <onboarding@resend.dev>";
+  const from = config.mode === "resend" ? config.from : "onboarding@resend.dev";
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -28,7 +29,7 @@ async function sendWithResend(message: EmailMessage) {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Resend failed (${response.status}): ${body}`);
+    throw mapResendFailure(response.status, body);
   }
 }
 

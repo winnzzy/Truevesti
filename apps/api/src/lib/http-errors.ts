@@ -2,6 +2,7 @@ import type { Response } from "express";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 import { EmailConfigurationError } from "./email-config.js";
+import { EmailDeliveryError } from "./email-delivery-error.js";
 
 export function sendError(res: Response, status: number, error: string, extra?: Record<string, unknown>) {
   return res.status(status).json({ error, ...extra });
@@ -29,10 +30,8 @@ export function handleRouteError(res: Response, err: unknown) {
     );
   }
 
-  if (err instanceof Error && err.message.includes("Resend failed")) {
-    return sendError(res, 502, "Verification email could not be delivered. Please try again later.", {
-      code: "EMAIL_DELIVERY_FAILED"
-    });
+  if (err instanceof EmailDeliveryError) {
+    return sendError(res, 502, err.userMessage, { code: err.code });
   }
 
   if (err instanceof Error) {

@@ -13,7 +13,8 @@
     "prisma:generate": "prisma generate",
     "prisma:seed": "tsx prisma/seed.ts"
     ,
-    "run:daily-accrual": "tsx scripts/daily-accrual.ts"
+    "run:daily-accrual": "tsx scripts/daily-accrual.ts",
+    "delete-user": "tsx scripts/delete-user-by-email.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.17.0",

@@ -3,9 +3,33 @@ import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { getReadinessChecks } from "../../lib/readiness.js";
 import { runDailyAccruals } from "../../lib/accruals.js";
+import { deleteUserByEmail } from "../../lib/delete-user.js";
+import { sendError } from "../../lib/http-errors.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 export const adminRouter = Router();
+
+/** No Render Shell needed — call from PowerShell with x-purge-secret header. */
+adminRouter.post("/purge-user", async (req, res) => {
+  const secret = process.env.ADMIN_PURGE_SECRET?.trim();
+  const provided = req.header("x-purge-secret")?.trim();
+
+  if (!secret || !provided || provided !== secret) {
+    return sendError(res, 401, "Invalid or missing purge secret", { code: "PURGE_UNAUTHORIZED" });
+  }
+
+  try {
+    const input = z.object({ email: z.string().email() }).parse(req.body);
+    const result = await deleteUserByEmail(input.email);
+    return res.json(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return sendError(res, 400, "Enter a valid email address", { code: "VALIDATION_ERROR" });
+    }
+    console.error(err);
+    return sendError(res, 500, "Could not delete user", { code: "PURGE_FAILED" });
+  }
+});
 
 adminRouter.use(requireAuth, requireRole("ADMIN"));
 

@@ -26,7 +26,8 @@ const schema = z.object({
   APPLE_CLIENT_ID: z.string().optional(),
   APPLE_CLIENT_SECRET: z.string().optional(),
   CHAIN_WEBHOOK_SECRET: z.string().optional(),
-  CRYPTO_PROVIDER_API_KEY: z.string().optional()
+  CRYPTO_PROVIDER_API_KEY: z.string().optional(),
+  ADMIN_PURGE_SECRET: z.string().optional()
 });
 
 export const env = schema.parse(process.env);

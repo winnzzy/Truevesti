@@ -32,8 +32,7 @@ withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
   if (!["ACTIVE", "MATURED"].includes(investment.status)) return res.status(400).json({ error: "Investment is not eligible for withdrawal" });
   if (Number(input.amountUsd) > Number(investment.principalUsd)) return res.status(400).json({ error: "Withdrawal exceeds investment principal" });
 
-  await prisma.$transaction(async (tx: any) => {
-  const withdrawal = await prisma.$transaction(async () => {
+  const withdrawal = await prisma.$transaction(async (tx: any) => {
     const created = await tx.withdrawal.create({
       data: {
         userId: req.user!.id,
@@ -64,5 +63,4 @@ withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
   });
 
   res.status(201).json({ withdrawal });
-});
 });

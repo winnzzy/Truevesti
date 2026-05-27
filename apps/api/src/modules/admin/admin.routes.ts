@@ -34,13 +34,14 @@ adminRouter.post("/purge-user", async (req, res) => {
 adminRouter.use(requireAuth, requireRole("ADMIN"));
 
 adminRouter.get("/overview", async (_req, res) => {
-  const [users, pendingWithdrawals, pendingKyc, openTickets] = await Promise.all([
+  const [users, pendingWithdrawals, pendingDeposits, pendingKyc, openTickets] = await Promise.all([
     prisma.user.count(),
     prisma.withdrawal.count({ where: { status: "PENDING" } }),
+    prisma.deposit.count({ where: { status: "PENDING" } }),
     prisma.kycCheck.count({ where: { status: "PENDING" } }),
     prisma.supportTicket.count({ where: { status: "OPEN" } })
   ]);
-  res.json({ users, pendingWithdrawals, pendingKyc, openTickets });
+  res.json({ users, pendingWithdrawals, pendingDeposits, pendingKyc, openTickets });
 });
 
 adminRouter.get("/audit-logs", async (_req, res) => {
@@ -85,6 +86,29 @@ adminRouter.patch("/withdrawals/:id/decision", async (req, res) => {
     data: { status: input.status, riskDecision: input.riskDecision, processedAt: new Date() }
   });
   res.json({ withdrawal });
+});
+
+adminRouter.patch("/deposits/:id/decision", async (req, res) => {
+  const input = z.object({ status: z.enum(["CONFIRMED", "REJECTED"]), txHash: z.string().optional() }).parse(req.body);
+  const deposit = await prisma.deposit.update({
+    where: { id: req.params.id },
+    data: {
+      status: input.status,
+      txHash: input.txHash,
+      confirmations: input.status === "CONFIRMED" ? 1 : 0,
+      confirmedAt: input.status === "CONFIRMED" ? new Date() : null
+    }
+  });
+  await prisma.notification.create({
+    data: {
+      userId: deposit.userId,
+      title: input.status === "CONFIRMED" ? "Deposit approved" : "Deposit rejected",
+      body: input.status === "CONFIRMED"
+        ? "Your manual deposit has been approved and added to your account balance."
+        : "Your manual deposit could not be approved. Contact support if you need help."
+    }
+  });
+  res.json({ deposit });
 });
 
 adminRouter.post("/run-accruals", async (_req, res) => {

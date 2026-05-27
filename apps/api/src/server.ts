@@ -12,6 +12,7 @@ import { adminRouter } from "./modules/admin/admin.routes.js";
 import { supportRouter } from "./modules/support/support.routes.js";
 import { notificationRouter } from "./modules/notifications/notification.routes.js";
 import { withdrawalRouter } from "./modules/withdrawals/withdrawal.routes.js";
+import { kycRouter } from "./modules/kyc/kyc.routes.js";
 
 const logger = pino();
 const app = express();
@@ -26,6 +27,7 @@ app.use("/auth", authRouter);
 app.use("/investments", investmentRouter);
 app.use("/payments", paymentRouter);
 app.use("/withdrawals", withdrawalRouter);
+app.use("/kyc", kycRouter);
 app.use("/admin", adminRouter);
 app.use("/support", supportRouter);
 app.use("/notifications", notificationRouter);

@@ -15,6 +15,50 @@ paymentRouter.get("/deposits", requireAuth, requireEmailVerified, async (req: Au
   res.json({ deposits });
 });
 
+paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+  const input = z.object({
+    assetSymbol: z.enum(["BTC", "ETH", "USDT", "USDC", "SOL", "BNB"]),
+    network: z.string().min(2),
+    amountUsd: z.number().positive(),
+    txHash: z.string().min(8).optional()
+  }).parse(req.body);
+
+  const deposit = await prisma.$transaction(async (tx) => {
+    const created = await tx.deposit.create({
+      data: {
+        userId: req.user!.id,
+        assetSymbol: input.assetSymbol,
+        network: input.network,
+        provider: "manual-admin",
+        providerAddressId: null,
+        depositAddress: "Manual admin review",
+        txHash: input.txHash,
+        amountUsd: input.amountUsd,
+        status: "PENDING"
+      }
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId: req.user!.id,
+        action: "MANUAL_DEPOSIT_REQUESTED",
+        entity: "Deposit",
+        entityId: created.id,
+        ipAddress: req.ip
+      }
+    });
+    await tx.notification.create({
+      data: {
+        userId: req.user!.id,
+        title: "Deposit request received",
+        body: "Your deposit is pending admin review. Balance updates after approval."
+      }
+    });
+    return created;
+  });
+
+  res.status(201).json({ deposit });
+});
+
 paymentRouter.post("/deposit-address", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const input = z.object({
     assetSymbol: z.enum(["BTC", "ETH", "USDT", "USDC", "SOL", "BNB"]),

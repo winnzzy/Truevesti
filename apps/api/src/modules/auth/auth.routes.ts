@@ -326,7 +326,7 @@ authRouter.post("/password/forgot", async (req, res) => {
       await sendEmail({
         to: user.email,
         subject: "Reset your Truevesti password",
-        html: "<p>Password reset is not yet enabled in the MVP. Contact support if you need help.</p>"
+        html: "<p>Password reset is not yet enabled. Contact support if you need help.</p>"
       });
     }
     return res.json({

@@ -131,6 +131,7 @@ model Investment {
 model Deposit {
   id              String            @id @default(cuid())
   userId          String
+  companyWalletId String?
   assetSymbol     String
   network         String
   provider        String
@@ -139,11 +140,29 @@ model Deposit {
   txHash          String?           @unique
   amountCrypto    Decimal?          @db.Decimal(36, 18)
   amountUsd       Decimal?          @db.Decimal(18, 2)
+  proofUrl        String?
+  rejectionReason String?           @db.Text
   confirmations   Int               @default(0)
   status          TransactionStatus @default(PENDING)
   createdAt       DateTime          @default(now())
   confirmedAt     DateTime?
   user            User              @relation(fields: [userId], references: [id], onDelete: Restrict)
+  companyWallet   CompanyWalletAddress? @relation(fields: [companyWalletId], references: [id], onDelete: SetNull)
+}
+
+model CompanyWalletAddress {
+  id            String    @id @default(cuid())
+  assetSymbol   String
+  network       String
+  label         String
+  address       String
+  instructions  String    @db.Text
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deposits      Deposit[]
+
+  @@unique([assetSymbol, network])
 }
 
 model Withdrawal {

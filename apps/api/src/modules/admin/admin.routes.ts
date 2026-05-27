@@ -5,6 +5,7 @@ import { getReadinessChecks } from "../../lib/readiness.js";
 import { runDailyAccruals } from "../../lib/accruals.js";
 import { deleteUserByEmail } from "../../lib/delete-user.js";
 import { sendError } from "../../lib/http-errors.js";
+import { depositDecisionSchema, walletAddressSchema, walletAddressUpdateSchema } from "../../lib/manual-deposits.js";
 import { requireAuth, requireRole } from "../../middleware/auth.js";
 
 export const adminRouter = Router();
@@ -49,6 +50,52 @@ adminRouter.get("/audit-logs", async (_req, res) => {
   res.json({ logs });
 });
 
+adminRouter.get("/company-wallets", async (_req, res) => {
+  const wallets = await prisma.companyWalletAddress.findMany({
+    orderBy: [{ assetSymbol: "asc" }, { network: "asc" }]
+  });
+  res.json({ wallets });
+});
+
+adminRouter.post("/company-wallets", async (req, res) => {
+  const input = walletAddressSchema.parse(req.body);
+  const wallet = await prisma.companyWalletAddress.upsert({
+    where: {
+      assetSymbol_network: {
+        assetSymbol: input.assetSymbol,
+        network: input.network
+      }
+    },
+    update: input,
+    create: {
+      ...input,
+      isActive: input.isActive ?? true
+    }
+  });
+  res.status(201).json({ wallet });
+});
+
+adminRouter.patch("/company-wallets/:id", async (req, res) => {
+  const input = walletAddressUpdateSchema.parse(req.body);
+  const wallet = await prisma.companyWalletAddress.update({
+    where: { id: req.params.id },
+    data: input
+  });
+  res.json({ wallet });
+});
+
+adminRouter.get("/deposits", async (_req, res) => {
+  const deposits = await prisma.deposit.findMany({
+    include: {
+      user: { select: { email: true } },
+      companyWallet: true
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100
+  });
+  res.json({ deposits });
+});
+
 adminRouter.get("/readiness", async (_req, res) => {
   const checks = getReadinessChecks();
   const criticalOpen = checks.filter((check) => !check.ok && check.severity === "critical").length;
@@ -89,24 +136,36 @@ adminRouter.patch("/withdrawals/:id/decision", async (req, res) => {
 });
 
 adminRouter.patch("/deposits/:id/decision", async (req, res) => {
-  const input = z.object({ status: z.enum(["CONFIRMED", "REJECTED"]), txHash: z.string().optional() }).parse(req.body);
-  const deposit = await prisma.deposit.update({
-    where: { id: req.params.id },
-    data: {
-      status: input.status,
-      txHash: input.txHash,
-      confirmations: input.status === "CONFIRMED" ? 1 : 0,
-      confirmedAt: input.status === "CONFIRMED" ? new Date() : null
-    }
-  });
-  await prisma.notification.create({
-    data: {
-      userId: deposit.userId,
-      title: input.status === "CONFIRMED" ? "Deposit approved" : "Deposit rejected",
-      body: input.status === "CONFIRMED"
-        ? "Your manual deposit has been approved and added to your account balance."
-        : "Your manual deposit could not be approved. Contact support if you need help."
-    }
+  const input = depositDecisionSchema.parse(req.body);
+  const deposit = await prisma.$transaction(async (tx) => {
+    const updated = await tx.deposit.update({
+      where: { id: req.params.id },
+      data: {
+        status: input.status,
+        txHash: input.status === "CONFIRMED" ? input.txHash : undefined,
+        confirmations: input.status === "CONFIRMED" ? 1 : 0,
+        confirmedAt: input.status === "CONFIRMED" ? new Date() : null,
+        rejectionReason: input.status === "REJECTED" ? input.reason : null
+      }
+    });
+    await tx.auditLog.create({
+      data: {
+        action: input.status === "CONFIRMED" ? "DEPOSIT_APPROVED" : "DEPOSIT_REJECTED",
+        entity: "Deposit",
+        entityId: updated.id,
+        metadata: input.status === "REJECTED" ? { reason: input.reason } : undefined
+      }
+    });
+    await tx.notification.create({
+      data: {
+        userId: updated.userId,
+        title: input.status === "CONFIRMED" ? "Deposit approved" : "Deposit rejected",
+        body: input.status === "CONFIRMED"
+          ? "Your deposit has been approved and added to your account balance."
+          : `Your deposit was rejected: ${input.reason}`
+      }
+    });
+    return updated;
   });
   res.json({ deposit });
 });

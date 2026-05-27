@@ -1,6 +1,5 @@
 import { Router } from "express";
-import { z } from "zod";
-import { createDepositAddress, verifyChainWebhook } from "../../lib/crypto-provider.js";
+import { manualDepositRequestSchema, supportedManualDepositOptions } from "../../lib/manual-deposits.js";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
@@ -15,25 +14,54 @@ paymentRouter.get("/deposits", requireAuth, requireEmailVerified, async (req: Au
   res.json({ deposits });
 });
 
+paymentRouter.get("/deposit-options", requireAuth, requireEmailVerified, async (_req: AuthRequest, res) => {
+  const wallets = await prisma.companyWalletAddress.findMany({
+    where: { isActive: true },
+    orderBy: [{ assetSymbol: "asc" }, { network: "asc" }]
+  });
+  const configured = new Map(wallets.map((wallet) => [`${wallet.assetSymbol}:${wallet.network}`, wallet]));
+
+  const options = supportedManualDepositOptions.map((option) => {
+    const wallet = configured.get(`${option.assetSymbol}:${option.network}`);
+    return {
+      ...option,
+      wallet: wallet ? {
+        id: wallet.id,
+        address: wallet.address,
+        instructions: wallet.instructions
+      } : null
+    };
+  });
+
+  res.json({ options });
+});
+
 paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
-  const input = z.object({
-    assetSymbol: z.enum(["BTC", "ETH", "USDT", "USDC", "SOL", "BNB"]),
-    network: z.string().min(2),
-    amountUsd: z.number().positive(),
-    txHash: z.string().min(8).optional()
-  }).parse(req.body);
+  const input = manualDepositRequestSchema.parse(req.body);
+  const wallet = await prisma.companyWalletAddress.findFirst({
+    where: {
+      assetSymbol: input.assetSymbol,
+      network: input.network,
+      isActive: true
+    }
+  });
+  if (!wallet) {
+    return res.status(400).json({ error: "Deposit address is not configured for this coin and network" });
+  }
 
   const deposit = await prisma.$transaction(async (tx) => {
     const created = await tx.deposit.create({
       data: {
         userId: req.user!.id,
+        companyWalletId: wallet.id,
         assetSymbol: input.assetSymbol,
         network: input.network,
         provider: "manual-admin",
-        providerAddressId: null,
-        depositAddress: "Manual admin review",
+        providerAddressId: wallet.id,
+        depositAddress: wallet.address,
         txHash: input.txHash,
         amountUsd: input.amountUsd,
+        proofUrl: input.proofUrl,
         status: "PENDING"
       }
     });
@@ -57,52 +85,4 @@ paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async 
   });
 
   res.status(201).json({ deposit });
-});
-
-paymentRouter.post("/deposit-address", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
-  const input = z.object({
-    assetSymbol: z.enum(["BTC", "ETH", "USDT", "USDC", "SOL", "BNB"]),
-    network: z.string().min(2)
-  }).parse(req.body);
-
-  const address = await createDepositAddress({ userId: req.user!.id, ...input });
-  const deposit = await prisma.deposit.create({
-    data: {
-      userId: req.user!.id,
-      assetSymbol: input.assetSymbol,
-      network: input.network,
-      provider: address.provider,
-      providerAddressId: address.providerAddressId,
-      depositAddress: address.address
-    }
-  });
-
-  res.status(201).json({ deposit });
-});
-
-paymentRouter.post("/webhooks/chain", async (req, res) => {
-  if (!verifyChainWebhook(req.header("x-provider-signature"), req.body)) {
-    return res.status(401).json({ error: "Invalid webhook signature" });
-  }
-
-  const input = z.object({
-    txHash: z.string(),
-    depositAddress: z.string(),
-    confirmations: z.number().int(),
-    amountCrypto: z.string(),
-    amountUsd: z.string().optional()
-  }).parse(req.body);
-
-  await prisma.deposit.updateMany({
-    where: { depositAddress: input.depositAddress },
-    data: {
-      txHash: input.txHash,
-      confirmations: input.confirmations,
-      amountCrypto: input.amountCrypto,
-      amountUsd: input.amountUsd,
-      status: input.confirmations >= 3 ? "CONFIRMED" : "CONFIRMING",
-      confirmedAt: input.confirmations >= 3 ? new Date() : undefined
-    }
-  });
-  res.json({ ok: true });
 });

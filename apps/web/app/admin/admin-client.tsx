@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { apiRequest, clearSession, readSession, type AuthSession } from "@/lib/api";
 import { Card } from "@/components/card";
 import { Nav } from "@/components/nav";
@@ -8,8 +8,32 @@ import { Nav } from "@/components/nav";
 type Overview = {
   users: number;
   pendingWithdrawals: number;
+  pendingDeposits: number;
   pendingKyc: number;
   openTickets: number;
+};
+
+type CompanyWallet = {
+  id: string;
+  assetSymbol: string;
+  network: string;
+  label: string;
+  address: string;
+  instructions: string;
+  isActive: boolean;
+};
+
+type AdminDeposit = {
+  id: string;
+  assetSymbol: string;
+  network: string;
+  depositAddress: string;
+  txHash: string | null;
+  amountUsd: string | null;
+  status: string;
+  rejectionReason: string | null;
+  createdAt: string;
+  user: { email: string };
 };
 
 type AuditLog = {
@@ -43,13 +67,21 @@ export function AdminClient() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [wallets, setWallets] = useState<CompanyWallet[]>([]);
+  const [deposits, setDeposits] = useState<AdminDeposit[]>([]);
+  const [walletAsset, setWalletAsset] = useState("USDT");
+  const [walletNetwork, setWalletNetwork] = useState("TRC20");
+  const [walletLabel, setWalletLabel] = useState("USDT TRC20");
+  const [walletAddress, setWalletAddress] = useState("");
+  const [walletInstructions, setWalletInstructions] = useState("Send only the selected coin on the selected network. Submit the transaction hash after payment.");
+  const [decisionReasons, setDecisionReasons] = useState<Record<string, string>>({});
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
   const canViewAdmin = useMemo(() => session?.user.role === "ADMIN", [session]);
 
-  useEffect(() => {
-    async function load() {
+  const load = useCallback(async () => {
       if (!session) {
         setIsLoading(false);
         return;
@@ -57,23 +89,28 @@ export function AdminClient() {
 
       try {
         const headers = { Authorization: `Bearer ${session.accessToken}` };
-        const [overviewResponse, auditResponse, readinessResponse] = await Promise.all([
+        const [overviewResponse, auditResponse, readinessResponse, walletResponse, depositResponse] = await Promise.all([
           apiRequest<Overview>("/admin/overview", { headers }),
           apiRequest<{ logs: AuditLog[] }>("/admin/audit-logs", { headers }),
-          apiRequest<Readiness>("/admin/readiness", { headers })
+          apiRequest<Readiness>("/admin/readiness", { headers }),
+          apiRequest<{ wallets: CompanyWallet[] }>("/admin/company-wallets", { headers }),
+          apiRequest<{ deposits: AdminDeposit[] }>("/admin/deposits", { headers })
         ]);
         setOverview(overviewResponse);
         setLogs(auditResponse.logs);
         setReadiness(readinessResponse);
+        setWallets(walletResponse.wallets);
+        setDeposits(depositResponse.deposits);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to load admin data");
       } finally {
         setIsLoading(false);
       }
-    }
-
-    void load();
   }, [session]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   function signOut() {
     clearSession();
@@ -81,6 +118,58 @@ export function AdminClient() {
     setOverview(null);
     setLogs([]);
     setReadiness(null);
+    setWallets([]);
+    setDeposits([]);
+  }
+
+  function applyWalletPreset(value: string) {
+    const [assetSymbol, network] = value.split(":");
+    setWalletAsset(assetSymbol);
+    setWalletNetwork(network);
+    setWalletLabel(network === "Bitcoin" || network === "Ethereum" ? assetSymbol : `${assetSymbol} ${network}`);
+  }
+
+  async function saveWallet(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setNotice("");
+    setError("");
+    try {
+      const headers = { Authorization: `Bearer ${session!.accessToken}` };
+      await apiRequest("/admin/company-wallets", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          assetSymbol: walletAsset,
+          network: walletNetwork,
+          label: walletLabel,
+          address: walletAddress,
+          instructions: walletInstructions,
+          isActive: true
+        })
+      });
+      setWalletAddress("");
+      setNotice("Company wallet saved.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save wallet");
+    }
+  }
+
+  async function decideDeposit(id: string, status: "CONFIRMED" | "REJECTED", txHash?: string | null) {
+    setNotice("");
+    setError("");
+    try {
+      const headers = { Authorization: `Bearer ${session!.accessToken}` };
+      await apiRequest(`/admin/deposits/${id}/decision`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(status === "CONFIRMED" ? { status, txHash: txHash || undefined } : { status, reason: decisionReasons[id] || "Deposit proof could not be verified" })
+      });
+      setNotice(status === "CONFIRMED" ? "Deposit approved." : "Deposit rejected.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update deposit");
+    }
   }
 
   if (isLoading) {
@@ -108,7 +197,7 @@ export function AdminClient() {
     );
   }
 
-  if (!canViewAdmin || error) {
+  if (!canViewAdmin) {
     return (
       <>
         <Nav />
@@ -128,6 +217,7 @@ export function AdminClient() {
   const stats = [
     ["Total users", overview?.users ?? 0],
     ["KYC pending", overview?.pendingKyc ?? 0],
+    ["Pending deposits", overview?.pendingDeposits ?? 0],
     ["Pending withdrawals", overview?.pendingWithdrawals ?? 0],
     ["Open tickets", overview?.openTickets ?? 0]
   ];
@@ -147,7 +237,9 @@ export function AdminClient() {
           Sign out
         </button>
       </div>
-      <div className="mt-4 grid gap-4 md:grid-cols-4">
+      {notice ? <p className="mt-4 rounded-md bg-mint/10 p-3 text-sm text-mint">{notice}</p> : null}
+      {error ? <p className="mt-4 rounded-md bg-red-500/10 p-3 text-sm text-red-200">{error}</p> : null}
+      <div className="mt-4 grid gap-4 md:grid-cols-5">
         {stats.map(([label, value]) => (
           <Card key={label}>
             <p className="text-sm text-slate-400">{label}</p>
@@ -155,6 +247,106 @@ export function AdminClient() {
           </Card>
         ))}
       </div>
+      <div className="mt-4 grid gap-4 xl:grid-cols-[360px_1fr]">
+        <Card>
+          <h2 className="text-xl font-semibold text-white">Company wallets</h2>
+          <form className="mt-4 grid gap-3" onSubmit={saveWallet}>
+            <label className="grid gap-2 text-sm text-slate-300">
+              Coin / network
+              <select
+                className="focus-ring rounded-md border border-white/10 bg-ink px-3 py-2.5 text-white"
+                onChange={(event) => applyWalletPreset(event.target.value)}
+                value={`${walletAsset}:${walletNetwork}`}
+              >
+                <option value="USDT:TRC20">USDT TRC20</option>
+                <option value="USDT:ERC20">USDT ERC20</option>
+                <option value="BTC:Bitcoin">BTC</option>
+                <option value="ETH:Ethereum">ETH</option>
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm text-slate-300">
+              Label
+              <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-white" onChange={(event) => setWalletLabel(event.target.value)} value={walletLabel} />
+            </label>
+            <label className="grid gap-2 text-sm text-slate-300">
+              Public wallet address
+              <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-white" onChange={(event) => setWalletAddress(event.target.value)} required value={walletAddress} />
+            </label>
+            <label className="grid gap-2 text-sm text-slate-300">
+              Payment instructions
+              <textarea className="focus-ring min-h-28 rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-white" onChange={(event) => setWalletInstructions(event.target.value)} required value={walletInstructions} />
+            </label>
+            <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink">Save wallet</button>
+          </form>
+        </Card>
+        <Card className="overflow-x-auto">
+          <h2 className="text-xl font-semibold text-white">Configured wallets</h2>
+          <table className="mt-4 w-full min-w-[760px] text-left text-sm">
+            <thead className="border-b border-white/10 text-xs uppercase tracking-[0.14em] text-slate-500">
+              <tr>
+                <th className="py-3">Label</th>
+                <th className="py-3">Address</th>
+                <th className="py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {wallets.length ? wallets.map((wallet) => (
+                <tr key={wallet.id}>
+                  <td className="py-4 pr-4 text-white">{wallet.label}</td>
+                  <td className="break-all py-4 pr-4 text-slate-300">{wallet.address}</td>
+                  <td className="py-4 text-slate-300">{wallet.isActive ? "Active" : "Inactive"}</td>
+                </tr>
+              )) : (
+                <tr><td className="py-4 text-slate-300" colSpan={3}>No company wallets configured.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </Card>
+      </div>
+      <Card className="mt-4 overflow-x-auto">
+        <h2 className="text-xl font-semibold text-white">Manual deposit approvals</h2>
+        <table className="mt-4 w-full min-w-[980px] text-left text-sm">
+          <thead className="border-b border-white/10 text-xs uppercase tracking-[0.14em] text-slate-500">
+            <tr>
+              <th className="py-3">User</th>
+              <th className="py-3">Coin</th>
+              <th className="py-3">Amount</th>
+              <th className="py-3">Tx hash</th>
+              <th className="py-3">Status</th>
+              <th className="py-3">Decision</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {deposits.length ? deposits.map((deposit) => (
+              <tr key={deposit.id}>
+                <td className="py-4 pr-4 text-white">{deposit.user.email}</td>
+                <td className="py-4 pr-4 text-slate-300">{deposit.assetSymbol} {deposit.network}</td>
+                <td className="py-4 pr-4 text-slate-300">{deposit.amountUsd ? `$${Number(deposit.amountUsd).toLocaleString()}` : "-"}</td>
+                <td className="max-w-[220px] truncate py-4 pr-4 text-slate-300">{deposit.txHash || "-"}</td>
+                <td className="py-4 pr-4 text-slate-300">{deposit.status}</td>
+                <td className="py-4">
+                  {deposit.status === "PENDING" ? (
+                    <div className="grid min-w-[280px] gap-2">
+                      <input
+                        className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2 text-white"
+                        onChange={(event) => setDecisionReasons((current) => ({ ...current, [deposit.id]: event.target.value }))}
+                        placeholder="Rejection reason"
+                        value={decisionReasons[deposit.id] || ""}
+                      />
+                      <div className="flex gap-2">
+                        <button className="focus-ring rounded-md bg-mint px-3 py-2 font-semibold text-ink" onClick={() => decideDeposit(deposit.id, "CONFIRMED", deposit.txHash)} type="button">Approve</button>
+                        <button className="focus-ring rounded-md border border-red-300/40 px-3 py-2 font-semibold text-red-100" onClick={() => decideDeposit(deposit.id, "REJECTED")} type="button">Reject</button>
+                      </div>
+                    </div>
+                  ) : deposit.rejectionReason || "Reviewed"}
+                </td>
+              </tr>
+            )) : (
+              <tr><td className="py-4 text-slate-300" colSpan={6}>No deposit requests yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </Card>
       <div className="mt-4 grid gap-4 lg:grid-cols-[.85fr_1.15fr]">
         <Card>
           <h2 className="text-xl font-semibold text-white">Launch readiness</h2>

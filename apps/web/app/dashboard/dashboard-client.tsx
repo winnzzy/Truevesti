@@ -50,14 +50,28 @@ type Investment = {
 
 type Deposit = {
   id: string;
+  companyWalletId?: string | null;
   assetSymbol: string;
   network: string;
   depositAddress: string;
   amountUsd: string | null;
+  proofUrl?: string | null;
+  rejectionReason?: string | null;
   status: string;
   confirmations: number;
   txHash?: string | null;
   createdAt: string;
+};
+
+type DepositOption = {
+  assetSymbol: string;
+  network: string;
+  label: string;
+  wallet: {
+    id: string;
+    address: string;
+    instructions: string;
+  } | null;
 };
 
 type Withdrawal = {
@@ -99,6 +113,7 @@ type Ticket = {
 
 type DashboardData = {
   plans: Plan[];
+  depositOptions: DepositOption[];
   investments: Investment[];
   deposits: Deposit[];
   withdrawals: Withdrawal[];
@@ -110,6 +125,7 @@ type DashboardData = {
 
 const emptyData: DashboardData = {
   plans: [],
+  depositOptions: [],
   investments: [],
   deposits: [],
   withdrawals: [],
@@ -192,10 +208,9 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [investmentAmount, setInvestmentAmount] = useState("1000");
   const [investmentAsset, setInvestmentAsset] = useState("USDC");
-  const [depositAsset, setDepositAsset] = useState("USDC");
-  const [depositNetwork, setDepositNetwork] = useState("Ethereum");
+  const [depositOptionKey, setDepositOptionKey] = useState("");
   const [depositAmount, setDepositAmount] = useState("500");
-  const [depositReference, setDepositReference] = useState("");
+  const [depositTxHash, setDepositTxHash] = useState("");
   const [withdrawalInvestmentId, setWithdrawalInvestmentId] = useState("");
   const [withdrawalAmount, setWithdrawalAmount] = useState("500");
   const [withdrawalAsset, setWithdrawalAsset] = useState("USDC");
@@ -217,8 +232,9 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
 
   const load = useCallback(async () => {
     try {
-      const [plans, investments, deposits, withdrawals, notifications, kyc, support] = await Promise.all([
+      const [plans, depositOptions, investments, deposits, withdrawals, notifications, kyc, support] = await Promise.all([
         apiRequest<{ plans: Plan[] }>("/investments/plans"),
+        headers ? apiRequest<{ options: DepositOption[] }>("/payments/deposit-options", { headers }) : Promise.resolve({ options: [] }),
         headers ? apiRequest<{ investments: Investment[] }>("/investments", { headers }) : Promise.resolve({ investments: [] }),
         headers ? apiRequest<{ deposits: Deposit[] }>("/payments/deposits", { headers }) : Promise.resolve({ deposits: [] }),
         headers ? apiRequest<{ withdrawals: Withdrawal[] }>("/withdrawals", { headers }) : Promise.resolve({ withdrawals: [] }),
@@ -228,6 +244,7 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
       ]);
       setData({
         plans: plans.plans,
+        depositOptions: depositOptions.options,
         investments: investments.investments,
         deposits: deposits.deposits,
         withdrawals: withdrawals.withdrawals,
@@ -237,6 +254,7 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
         tickets: support.tickets
       });
       setSelectedPlanId((current) => current || plans.plans[0]?.id || "");
+      setDepositOptionKey((current) => current || depositOptions.options.find((option) => option.wallet)?.label || depositOptions.options[0]?.label || "");
       setWithdrawalInvestmentId((current) => current || investments.investments.find((item) => new Date(item.maturesAt) <= new Date())?.id || "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load dashboard");
@@ -281,17 +299,22 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
     setStatus("");
     setError("");
     try {
+      const option = data.depositOptions.find((item) => item.label === depositOptionKey);
+      if (!option?.wallet) {
+        setError("Deposit address is not configured for the selected coin and network.");
+        return;
+      }
       await apiRequest<{ deposit: Deposit }>("/payments/deposits/manual", {
         method: "POST",
         headers,
         body: JSON.stringify({
-          assetSymbol: depositAsset,
-          network: depositNetwork,
+          assetSymbol: option.assetSymbol,
+          network: option.network,
           amountUsd: Number(depositAmount),
-          txHash: depositReference || undefined
+          txHash: depositTxHash
         })
       });
-      setDepositReference("");
+      setDepositTxHash("");
       setStatus("Deposit request submitted. Admin approval is required before balance changes.");
       await load();
     } catch (err) {
@@ -311,7 +334,7 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
           planId: selectedPlanId,
           principalUsd: Number(investmentAmount),
           assetSymbol: investmentAsset,
-          disclosureHash: `mvp-risk-disclosure-${Date.now()}`
+          disclosureHash: `risk-disclosure-${Date.now()}`
         })
       });
       setStatus("Investment started. Returns are estimates and may vary with market conditions.");
@@ -392,6 +415,7 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
   const withdrawalBalance = maturedInvestments.reduce((sum, item) => sum + Number(item.principalUsd) + Number(item.accruedInterestUsd ?? 0), 0) - pendingWithdrawals;
   const pendingDeposits = data.deposits.filter((item) => item.status === "PENDING").reduce((sum, item) => sum + Number(item.amountUsd ?? 0), 0);
   const investorName = session?.user.email.split("@")[0] || "Investor";
+  const selectedDepositOption = data.depositOptions.find((item) => item.label === depositOptionKey);
 
   if (isLoading) {
     return (
@@ -438,7 +462,7 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-mint">Investor workspace</p>
               <h1 className="mt-2 text-3xl font-semibold text-white">Welcome back, {investorName}</h1>
-              <p className="mt-2 max-w-3xl text-sm text-slate-300">Manual deposits and withdrawals are reviewed by admins for the MVP. Performance figures are estimates, not guaranteed outcomes.</p>
+              <p className="mt-2 max-w-3xl text-sm text-slate-300">Manual deposits and withdrawals are reviewed by admins. Performance figures are estimates, not guaranteed outcomes.</p>
             </div>
             <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
               <p className="font-semibold text-slate-100">{session.user.email}</p>
@@ -535,11 +559,26 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
               <Card>
                 <h2 className="text-lg font-semibold text-white">Manual deposit request</h2>
                 <form className="mt-4 grid gap-3" onSubmit={submitManualDeposit}>
-                  <FieldLabel>Asset<select className={inputClass()} onChange={(event) => setDepositAsset(event.target.value)} value={depositAsset}>{assets.map((asset) => <option key={asset}>{asset}</option>)}</select></FieldLabel>
-                  <FieldLabel>Network<input className={inputClass()} onChange={(event) => setDepositNetwork(event.target.value)} value={depositNetwork} /></FieldLabel>
+                  <FieldLabel>
+                    Coin / network
+                    <select className={inputClass()} onChange={(event) => setDepositOptionKey(event.target.value)} value={depositOptionKey}>
+                      {data.depositOptions.map((option) => <option key={option.label} value={option.label}>{option.label}</option>)}
+                    </select>
+                  </FieldLabel>
+                  <div className="rounded-md border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
+                    {selectedDepositOption?.wallet ? (
+                      <>
+                        <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Company wallet</p>
+                        <p className="mt-2 break-all font-semibold text-white">{selectedDepositOption.wallet.address}</p>
+                        <p className="mt-3 leading-6 text-slate-300">{selectedDepositOption.wallet.instructions}</p>
+                      </>
+                    ) : (
+                      <p>This deposit option is not configured yet. Contact support or choose another network.</p>
+                    )}
+                  </div>
                   <FieldLabel>Amount USD<input className={inputClass()} min="1" onChange={(event) => setDepositAmount(event.target.value)} type="number" value={depositAmount} /></FieldLabel>
-                  <FieldLabel>Transaction/reference optional<input className={inputClass()} onChange={(event) => setDepositReference(event.target.value)} value={depositReference} /></FieldLabel>
-                  <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink">Submit for approval</button>
+                  <FieldLabel>Transaction hash<input className={inputClass()} minLength={8} onChange={(event) => setDepositTxHash(event.target.value)} required value={depositTxHash} /></FieldLabel>
+                  <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink" disabled={!selectedDepositOption?.wallet}>Submit for approval</button>
                 </form>
               </Card>
               <Card>
@@ -547,7 +586,13 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
                 <DataTable
                   columns={["Asset", "Network", "Amount", "Status", "Created"]}
                   empty="No deposit requests yet."
-                  rows={data.deposits.map((item) => [item.assetSymbol, item.network, money(item.amountUsd), <StatusPill key={item.id} status={item.status} />, date(item.createdAt)])}
+                  rows={data.deposits.map((item) => [
+                    item.assetSymbol,
+                    item.network,
+                    money(item.amountUsd),
+                    <StatusPill key={item.id} status={item.status} />,
+                    item.status === "REJECTED" && item.rejectionReason ? item.rejectionReason : date(item.createdAt)
+                  ])}
                 />
               </Card>
             </div>

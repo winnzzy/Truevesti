@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { getUserBalance } from "../../lib/balances.js";
 import { manualDepositRequestSchema, supportedManualDepositOptions } from "../../lib/manual-deposits.js";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
@@ -12,6 +13,11 @@ paymentRouter.get("/deposits", requireAuth, requireEmailVerified, async (req: Au
     take: 50
   });
   res.json({ deposits });
+});
+
+paymentRouter.get("/balance", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+  const balance = await getUserBalance(req.user!.id);
+  res.json({ balance });
 });
 
 paymentRouter.get("/deposit-options", requireAuth, requireEmailVerified, async (_req: AuthRequest, res) => {

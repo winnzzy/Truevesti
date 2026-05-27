@@ -1,15 +1,5 @@
 import { prisma } from "./prisma.js";
-
-function computeInvestmentDailyAccrual(investment: { principalUsd: string; startedAt: Date; maturesAt: Date; plan: any }) {
-  const principal = Number(investment.principalUsd);
-  const durationDays = Number(investment.plan.durationDays) || 0;
-  const yieldMin = Number(investment.plan.estimatedYieldMin) || 0;
-  const yieldMax = Number(investment.plan.estimatedYieldMax) || 0;
-  const avgYield = (yieldMin + yieldMax) / 2;
-  const totalInterest = principal * avgYield;
-  const dailyAccrual = durationDays > 0 ? totalInterest / durationDays : 0;
-  return { dailyAccrual, totalInterest };
-}
+import { computeAccrualSnapshot } from "./investment-math.js";
 
 export async function runDailyAccruals(date = new Date()) {
   // normalize to UTC date (midnight)
@@ -17,8 +7,16 @@ export async function runDailyAccruals(date = new Date()) {
 
   const investments = await prisma.investment.findMany({ where: { status: "ACTIVE" }, include: { plan: true } });
   let created = 0;
+  let completed = 0;
   for (const inv of investments) {
-    const { dailyAccrual } = computeInvestmentDailyAccrual({ principalUsd: inv.principalUsd.toString(), startedAt: inv.startedAt, maturesAt: inv.maturesAt, plan: inv.plan });
+    const snapshot = computeAccrualSnapshot({
+      principalUsd: inv.principalUsd.toString(),
+      expectedReturnUsd: inv.expectedReturnUsd.toString(),
+      startedAt: inv.startedAt,
+      maturesAt: inv.maturesAt,
+      plan: inv.plan
+    });
+    const dailyAccrual = Number(snapshot.dailyAccrualUsd);
     if (dailyAccrual <= 0) continue;
 
     // idempotent insert: skip if already exists for investment+date
@@ -31,8 +29,23 @@ export async function runDailyAccruals(date = new Date()) {
       INSERT INTO "Accrual" ("investmentId", "amountUsd", "date") VALUES (${inv.id}, ${dailyAccrual.toFixed(2)}, ${day.toISOString().slice(0, 10)}::date)
     `;
     created++;
+
+    if (inv.maturesAt <= date) {
+      await prisma.investment.update({
+        where: { id: inv.id },
+        data: { status: "COMPLETED", completedAt: date }
+      });
+      await prisma.notification.create({
+        data: {
+          userId: inv.userId,
+          title: "Investment completed",
+          body: "Your investment has reached its scheduled end date and has been credited to your available balance."
+        }
+      });
+      completed++;
+    }
   }
-  return { processed: investments.length, created };
+  return { processed: investments.length, created, completed };
 }
 
 export default runDailyAccruals;

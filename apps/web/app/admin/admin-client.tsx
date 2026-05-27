@@ -9,6 +9,7 @@ type Overview = {
   users: number;
   pendingWithdrawals: number;
   pendingDeposits: number;
+  activeInvestments: number;
   pendingKyc: number;
   openTickets: number;
 };
@@ -34,6 +35,76 @@ type AdminDeposit = {
   rejectionReason: string | null;
   createdAt: string;
   user: { email: string };
+};
+
+type AdminWithdrawal = {
+  id: string;
+  assetSymbol: string;
+  network: string;
+  destination: string;
+  amountUsd: string;
+  txHash: string | null;
+  status: string;
+  rejectionReason: string | null;
+  adminNote: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  user: { email: string; profile?: { firstName?: string | null; lastName?: string | null } | null };
+};
+
+type AdminPlan = {
+  id: string;
+  name: string;
+  minDepositUsd: string;
+  maxDepositUsd: string;
+  durationDays: number;
+  estimatedYieldMin: string;
+  estimatedYieldMax: string;
+  riskLevel: string;
+  riskNote: string | null;
+  assetAllocation: string;
+  supportedAssets: string[];
+  isActive: boolean;
+};
+
+type AdminInvestment = {
+  id: string;
+  principalUsd: string;
+  expectedReturnUsd: string;
+  status: string;
+  startedAt: string;
+  maturesAt: string;
+  user: { email: string; profile?: { firstName?: string | null; lastName?: string | null } | null };
+  plan: { name: string };
+};
+
+type AdminUser = {
+  id: string;
+  email: string;
+  role: string;
+  emailVerifiedAt: string | null;
+  createdAt: string;
+  profile?: { firstName?: string | null; lastName?: string | null } | null;
+  balance: { availableUsd: string };
+};
+
+type AdminKyc = {
+  id: string;
+  status: string;
+  reason: string | null;
+  updatedAt: string;
+  user: { email: string; profile?: { firstName?: string | null; lastName?: string | null } | null };
+};
+
+type AdminTicket = {
+  id: string;
+  subject: string;
+  status: string;
+  priority: string;
+  message: string;
+  adminResponse: string | null;
+  createdAt: string;
+  user: { email: string; profile?: { firstName?: string | null; lastName?: string | null } | null };
 };
 
 type AuditLog = {
@@ -62,6 +133,24 @@ type Readiness = {
   };
 };
 
+function money(value: string | number | null | undefined) {
+  return new Intl.NumberFormat("en-US", { currency: "USD", style: "currency", maximumFractionDigits: 0 }).format(Number(value ?? 0));
+}
+
+function badgeClass(status: string) {
+  if (["CONFIRMED", "APPROVED", "PAID", "VERIFIED", "ACTIVE", "COMPLETED", "ANSWERED"].includes(status)) return "border-mint/30 bg-mint/10 text-mint";
+  if (["REJECTED", "FAILED", "CANCELLED"].includes(status)) return "border-red-400/30 bg-red-500/10 text-red-200";
+  return "border-gold/30 bg-gold/10 text-gold";
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${badgeClass(status)}`}>{status}</span>;
+}
+
+function adminDisplayName(user: { email: string; profile?: { firstName?: string | null; lastName?: string | null } | null }) {
+  return [user.profile?.firstName, user.profile?.lastName].filter(Boolean).join(" ").trim() || user.email;
+}
+
 export function AdminClient() {
   const [session, setSession] = useState<AuthSession | null>(() => readSession());
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -69,12 +158,30 @@ export function AdminClient() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [wallets, setWallets] = useState<CompanyWallet[]>([]);
   const [deposits, setDeposits] = useState<AdminDeposit[]>([]);
+  const [withdrawals, setWithdrawals] = useState<AdminWithdrawal[]>([]);
+  const [plans, setPlans] = useState<AdminPlan[]>([]);
+  const [investments, setInvestments] = useState<AdminInvestment[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [kycChecks, setKycChecks] = useState<AdminKyc[]>([]);
+  const [tickets, setTickets] = useState<AdminTicket[]>([]);
   const [walletAsset, setWalletAsset] = useState("USDT");
   const [walletNetwork, setWalletNetwork] = useState("TRC20");
   const [walletLabel, setWalletLabel] = useState("USDT TRC20");
   const [walletAddress, setWalletAddress] = useState("");
   const [walletInstructions, setWalletInstructions] = useState("Send only the selected coin on the selected network. Submit the transaction hash after payment.");
   const [decisionReasons, setDecisionReasons] = useState<Record<string, string>>({});
+  const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
+  const [txHashes, setTxHashes] = useState<Record<string, string>>({});
+  const [responses, setResponses] = useState<Record<string, string>>({});
+  const [planName, setPlanName] = useState("");
+  const [planMin, setPlanMin] = useState("100");
+  const [planMax, setPlanMax] = useState("5000");
+  const [planDuration, setPlanDuration] = useState("30");
+  const [planReturnMin, setPlanReturnMin] = useState("0.05");
+  const [planReturnMax, setPlanReturnMax] = useState("0.08");
+  const [planRisk, setPlanRisk] = useState("Moderate");
+  const [planRiskNote, setPlanRiskNote] = useState("Crypto markets can move against the strategy. Returns are estimates and may vary.");
+  const [planAssets, setPlanAssets] = useState("USDT,BTC,ETH");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -89,18 +196,30 @@ export function AdminClient() {
 
       try {
         const headers = { Authorization: `Bearer ${session.accessToken}` };
-        const [overviewResponse, auditResponse, readinessResponse, walletResponse, depositResponse] = await Promise.all([
+        const [overviewResponse, auditResponse, readinessResponse, walletResponse, depositResponse, withdrawalResponse, planResponse, investmentResponse, userResponse, kycResponse, ticketResponse] = await Promise.all([
           apiRequest<Overview>("/admin/overview", { headers }),
           apiRequest<{ logs: AuditLog[] }>("/admin/audit-logs", { headers }),
           apiRequest<Readiness>("/admin/readiness", { headers }),
           apiRequest<{ wallets: CompanyWallet[] }>("/admin/company-wallets", { headers }),
-          apiRequest<{ deposits: AdminDeposit[] }>("/admin/deposits", { headers })
+          apiRequest<{ deposits: AdminDeposit[] }>("/admin/deposits", { headers }),
+          apiRequest<{ withdrawals: AdminWithdrawal[] }>("/admin/withdrawals", { headers }),
+          apiRequest<{ plans: AdminPlan[] }>("/admin/plans", { headers }),
+          apiRequest<{ investments: AdminInvestment[] }>("/admin/investments", { headers }),
+          apiRequest<{ users: AdminUser[] }>("/admin/users", { headers }),
+          apiRequest<{ checks: AdminKyc[] }>("/admin/kyc", { headers }),
+          apiRequest<{ tickets: AdminTicket[] }>("/admin/support/tickets", { headers })
         ]);
         setOverview(overviewResponse);
         setLogs(auditResponse.logs);
         setReadiness(readinessResponse);
         setWallets(walletResponse.wallets);
         setDeposits(depositResponse.deposits);
+        setWithdrawals(withdrawalResponse.withdrawals);
+        setPlans(planResponse.plans);
+        setInvestments(investmentResponse.investments);
+        setUsers(userResponse.users);
+        setKycChecks(kycResponse.checks);
+        setTickets(ticketResponse.tickets);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to load admin data");
       } finally {
@@ -120,6 +239,12 @@ export function AdminClient() {
     setReadiness(null);
     setWallets([]);
     setDeposits([]);
+    setWithdrawals([]);
+    setPlans([]);
+    setInvestments([]);
+    setUsers([]);
+    setKycChecks([]);
+    setTickets([]);
   }
 
   function applyWalletPreset(value: string) {
@@ -156,6 +281,7 @@ export function AdminClient() {
   }
 
   async function decideDeposit(id: string, status: "CONFIRMED" | "REJECTED", txHash?: string | null) {
+    if (!window.confirm(status === "CONFIRMED" ? "Approve this deposit?" : "Reject this deposit?")) return;
     setNotice("");
     setError("");
     try {
@@ -169,6 +295,130 @@ export function AdminClient() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update deposit");
+    }
+  }
+
+  async function savePlan(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!window.confirm("Save this investment plan?")) return;
+    setNotice("");
+    setError("");
+    try {
+      const headers = { Authorization: `Bearer ${session!.accessToken}` };
+      await apiRequest("/admin/plans", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          name: planName,
+          minDepositUsd: Number(planMin),
+          maxDepositUsd: Number(planMax),
+          durationDays: Number(planDuration),
+          estimatedYieldMin: Number(planReturnMin),
+          estimatedYieldMax: Number(planReturnMax),
+          riskLevel: planRisk,
+          riskNote: planRiskNote,
+          assetAllocation: planAssets,
+          supportedAssets: planAssets.split(",").map((asset) => asset.trim()).filter(Boolean),
+          isActive: true
+        })
+      });
+      setPlanName("");
+      setNotice("Investment plan saved.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save plan");
+    }
+  }
+
+  async function updatePlan(plan: AdminPlan, data: Partial<AdminPlan>) {
+    if (!window.confirm("Update this investment plan?")) return;
+    setNotice("");
+    setError("");
+    try {
+      const headers = { Authorization: `Bearer ${session!.accessToken}` };
+      await apiRequest(`/admin/plans/${plan.id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(data)
+      });
+      setNotice("Investment plan updated.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update plan");
+    }
+  }
+
+  async function decideWithdrawal(id: string, status: "APPROVED" | "REJECTED" | "PAID") {
+    if (!window.confirm(`${status === "PAID" ? "Mark this withdrawal as paid" : status.toLowerCase()}?`)) return;
+    setNotice("");
+    setError("");
+    try {
+      const headers = { Authorization: `Bearer ${session!.accessToken}` };
+      await apiRequest(`/admin/withdrawals/${id}/decision`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(
+          status === "APPROVED"
+            ? { status, adminNote: adminNotes[id] || undefined }
+            : status === "REJECTED"
+              ? { status, reason: decisionReasons[id] || "Withdrawal could not be approved" }
+              : { status, txHash: txHashes[id], adminNote: adminNotes[id] || undefined }
+        )
+      });
+      setNotice("Withdrawal updated.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update withdrawal");
+    }
+  }
+
+  async function updateKyc(id: string, status: "VERIFIED" | "REJECTED" | "PENDING") {
+    if (!window.confirm(`Set KYC status to ${status}?`)) return;
+    setNotice("");
+    setError("");
+    try {
+      const headers = { Authorization: `Bearer ${session!.accessToken}` };
+      await apiRequest(`/admin/kyc/${id}/decision`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ status, reason: decisionReasons[id] || undefined })
+      });
+      setNotice("KYC updated.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update KYC");
+    }
+  }
+
+  async function respondTicket(id: string, status = "ANSWERED") {
+    if (!window.confirm("Send this support response?")) return;
+    setNotice("");
+    setError("");
+    try {
+      const headers = { Authorization: `Bearer ${session!.accessToken}` };
+      await apiRequest(`/admin/support/tickets/${id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ status, adminResponse: responses[id] || "Operations has reviewed your ticket." })
+      });
+      setNotice("Support ticket updated.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update support ticket");
+    }
+  }
+
+  async function runAccruals() {
+    if (!window.confirm("Run accrual processing now?")) return;
+    setNotice("");
+    setError("");
+    try {
+      const headers = { Authorization: `Bearer ${session!.accessToken}` };
+      const result = await apiRequest<{ result: { processed: number; created: number; completed: number } }>("/admin/run-accruals", { method: "POST", headers });
+      setNotice(`Accruals processed: ${result.result.processed}, completed: ${result.result.completed}.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to run accruals");
     }
   }
 
@@ -219,6 +469,7 @@ export function AdminClient() {
     ["KYC pending", overview?.pendingKyc ?? 0],
     ["Pending deposits", overview?.pendingDeposits ?? 0],
     ["Pending withdrawals", overview?.pendingWithdrawals ?? 0],
+    ["Active investments", overview?.activeInvestments ?? 0],
     ["Open tickets", overview?.openTickets ?? 0]
   ];
 
@@ -239,13 +490,76 @@ export function AdminClient() {
       </div>
       {notice ? <p className="mt-4 rounded-md bg-mint/10 p-3 text-sm text-mint">{notice}</p> : null}
       {error ? <p className="mt-4 rounded-md bg-red-500/10 p-3 text-sm text-red-200">{error}</p> : null}
-      <div className="mt-4 grid gap-4 md:grid-cols-5">
+      <div className="mt-4 grid gap-4 md:grid-cols-6">
         {stats.map(([label, value]) => (
           <Card key={label}>
             <p className="text-sm text-slate-400">{label}</p>
             <p className="mt-2 text-3xl font-semibold text-white">{value}</p>
           </Card>
         ))}
+      </div>
+      <Card className="mt-4 overflow-x-auto">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold text-white">Users</h2>
+          <p className="text-sm text-slate-400">{users.length} recent accounts</p>
+        </div>
+        <table className="mt-4 w-full min-w-[760px] text-left text-sm">
+          <thead className="border-b border-white/10 text-xs uppercase tracking-[0.14em] text-slate-500">
+            <tr><th className="py-3">Name</th><th>Email</th><th>Role</th><th>Balance</th><th>Joined</th></tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {users.map((user) => (
+              <tr key={user.id}>
+                <td className="py-4 pr-4 text-white">{adminDisplayName(user)}</td>
+                <td className="py-4 pr-4 text-slate-300">{user.email}</td>
+                <td className="py-4 pr-4 text-slate-300">{user.role}</td>
+                <td className="py-4 pr-4 text-slate-300">{money(user.balance.availableUsd)}</td>
+                <td className="py-4 text-slate-400">{new Date(user.createdAt).toLocaleDateString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+      <div className="mt-4 grid gap-4 xl:grid-cols-[360px_1fr]">
+        <Card>
+          <h2 className="text-xl font-semibold text-white">Investment plans</h2>
+          <form className="mt-4 grid gap-3" onSubmit={savePlan}>
+            <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-white" onChange={(event) => setPlanName(event.target.value)} placeholder="Plan name" required value={planName} />
+            <div className="grid grid-cols-2 gap-3">
+              <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-white" onChange={(event) => setPlanMin(event.target.value)} placeholder="Minimum" type="number" value={planMin} />
+              <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-white" onChange={(event) => setPlanMax(event.target.value)} placeholder="Maximum" type="number" value={planMax} />
+            </div>
+            <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-white" onChange={(event) => setPlanDuration(event.target.value)} placeholder="Duration days" type="number" value={planDuration} />
+            <div className="grid grid-cols-2 gap-3">
+              <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-white" onChange={(event) => setPlanReturnMin(event.target.value)} placeholder="Return min e.g. 0.05" type="number" value={planReturnMin} />
+              <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-white" onChange={(event) => setPlanReturnMax(event.target.value)} placeholder="Return max e.g. 0.08" type="number" value={planReturnMax} />
+            </div>
+            <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-white" onChange={(event) => setPlanRisk(event.target.value)} placeholder="Risk level" value={planRisk} />
+            <textarea className="focus-ring min-h-24 rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-white" onChange={(event) => setPlanRiskNote(event.target.value)} placeholder="Risk note" value={planRiskNote} />
+            <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-white" onChange={(event) => setPlanAssets(event.target.value)} placeholder="Assets, comma separated" value={planAssets} />
+            <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink">Create plan</button>
+          </form>
+        </Card>
+        <Card className="overflow-x-auto">
+          <h2 className="text-xl font-semibold text-white">Plan controls</h2>
+          <table className="mt-4 w-full min-w-[860px] text-left text-sm">
+            <thead className="border-b border-white/10 text-xs uppercase tracking-[0.14em] text-slate-500">
+              <tr><th className="py-3">Plan</th><th>Limits</th><th>Duration</th><th>Return range</th><th>Status</th><th>Action</th></tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {plans.map((plan) => (
+                <tr key={plan.id}>
+                  <td className="py-4 pr-4 text-white">{plan.name}<p className="mt-1 text-xs text-slate-500">{plan.riskNote}</p></td>
+                  <td className="py-4 pr-4 text-slate-300">{money(plan.minDepositUsd)} - {money(plan.maxDepositUsd)}</td>
+                  <td className="py-4 pr-4 text-slate-300">{plan.durationDays} days</td>
+                  <td className="py-4 pr-4 text-slate-300">{(Number(plan.estimatedYieldMin) * 100).toFixed(1)}%-{(Number(plan.estimatedYieldMax) * 100).toFixed(1)}%</td>
+                  <td className="py-4 pr-4"><StatusBadge status={plan.isActive ? "ACTIVE" : "INACTIVE"} /></td>
+                  <td className="py-4"><button className="focus-ring rounded-md border border-white/20 px-3 py-2 text-white" onClick={() => updatePlan(plan, { isActive: !plan.isActive })}>{plan.isActive ? "Disable" : "Enable"}</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
       </div>
       <div className="mt-4 grid gap-4 xl:grid-cols-[360px_1fr]">
         <Card>
@@ -344,6 +658,101 @@ export function AdminClient() {
             )) : (
               <tr><td className="py-4 text-slate-300" colSpan={6}>No deposit requests yet.</td></tr>
             )}
+          </tbody>
+        </table>
+      </Card>
+      <Card className="mt-4 overflow-x-auto">
+        <h2 className="text-xl font-semibold text-white">Withdrawal approvals</h2>
+        <table className="mt-4 w-full min-w-[1080px] text-left text-sm">
+          <thead className="border-b border-white/10 text-xs uppercase tracking-[0.14em] text-slate-500">
+            <tr><th className="py-3">User</th><th>Coin</th><th>Amount</th><th>Destination</th><th>Status</th><th>Decision</th></tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {withdrawals.map((withdrawal) => (
+              <tr key={withdrawal.id}>
+                <td className="py-4 pr-4 text-white">{adminDisplayName(withdrawal.user)}<p className="text-xs text-slate-500">{withdrawal.user.email}</p></td>
+                <td className="py-4 pr-4 text-slate-300">{withdrawal.assetSymbol} {withdrawal.network}</td>
+                <td className="py-4 pr-4 text-slate-300">{money(withdrawal.amountUsd)}</td>
+                <td className="max-w-[220px] truncate py-4 pr-4 text-slate-300">{withdrawal.destination}</td>
+                <td className="py-4 pr-4"><StatusBadge status={withdrawal.status} /></td>
+                <td className="py-4">
+                  {["PENDING", "APPROVED"].includes(withdrawal.status) ? (
+                    <div className="grid min-w-[340px] gap-2">
+                      <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2 text-white" onChange={(event) => setAdminNotes((current) => ({ ...current, [withdrawal.id]: event.target.value }))} placeholder="Admin note" value={adminNotes[withdrawal.id] || ""} />
+                      <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2 text-white" onChange={(event) => setDecisionReasons((current) => ({ ...current, [withdrawal.id]: event.target.value }))} placeholder="Rejection reason" value={decisionReasons[withdrawal.id] || ""} />
+                      <input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2 text-white" onChange={(event) => setTxHashes((current) => ({ ...current, [withdrawal.id]: event.target.value }))} placeholder="Payout tx hash" value={txHashes[withdrawal.id] || ""} />
+                      <div className="flex flex-wrap gap-2">
+                        {withdrawal.status === "PENDING" ? <button className="focus-ring rounded-md bg-mint px-3 py-2 font-semibold text-ink" onClick={() => decideWithdrawal(withdrawal.id, "APPROVED")} type="button">Approve</button> : null}
+                        <button className="focus-ring rounded-md border border-red-300/40 px-3 py-2 font-semibold text-red-100" onClick={() => decideWithdrawal(withdrawal.id, "REJECTED")} type="button">Reject</button>
+                        <button className="focus-ring rounded-md border border-white/20 px-3 py-2 font-semibold text-white" onClick={() => decideWithdrawal(withdrawal.id, "PAID")} type="button">Mark paid</button>
+                      </div>
+                    </div>
+                  ) : withdrawal.adminNote || withdrawal.rejectionReason || "Reviewed"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <Card className="overflow-x-auto">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold text-white">User investments</h2>
+            <button className="focus-ring rounded-md border border-white/20 px-3 py-2 text-sm font-semibold text-white" onClick={runAccruals}>Run accruals</button>
+          </div>
+          <table className="mt-4 w-full min-w-[760px] text-left text-sm">
+            <thead className="border-b border-white/10 text-xs uppercase tracking-[0.14em] text-slate-500">
+              <tr><th className="py-3">User</th><th>Plan</th><th>Amount</th><th>Expected</th><th>Status</th><th>End date</th></tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {investments.map((investment) => (
+                <tr key={investment.id}>
+                  <td className="py-4 pr-4 text-white">{adminDisplayName(investment.user)}</td>
+                  <td className="py-4 pr-4 text-slate-300">{investment.plan.name}</td>
+                  <td className="py-4 pr-4 text-slate-300">{money(investment.principalUsd)}</td>
+                  <td className="py-4 pr-4 text-slate-300">{money(investment.expectedReturnUsd)}</td>
+                  <td className="py-4 pr-4"><StatusBadge status={investment.status} /></td>
+                  <td className="py-4 text-slate-400">{new Date(investment.maturesAt).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+        <Card className="overflow-x-auto">
+          <h2 className="text-xl font-semibold text-white">KYC review</h2>
+          <table className="mt-4 w-full min-w-[680px] text-left text-sm">
+            <thead className="border-b border-white/10 text-xs uppercase tracking-[0.14em] text-slate-500">
+              <tr><th className="py-3">User</th><th>Status</th><th>Reason</th><th>Action</th></tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {kycChecks.map((check) => (
+                <tr key={check.id}>
+                  <td className="py-4 pr-4 text-white">{adminDisplayName(check.user)}<p className="text-xs text-slate-500">{check.user.email}</p></td>
+                  <td className="py-4 pr-4"><StatusBadge status={check.status} /></td>
+                  <td className="py-4 pr-4 text-slate-300"><input className="focus-ring rounded-md border border-white/10 bg-white/10 px-3 py-2 text-white" onChange={(event) => setDecisionReasons((current) => ({ ...current, [check.id]: event.target.value }))} placeholder={check.reason || "Reason"} value={decisionReasons[check.id] || ""} /></td>
+                  <td className="py-4"><div className="flex gap-2"><button className="focus-ring rounded-md bg-mint px-3 py-2 font-semibold text-ink" onClick={() => updateKyc(check.id, "VERIFIED")}>Verify</button><button className="focus-ring rounded-md border border-red-300/40 px-3 py-2 font-semibold text-red-100" onClick={() => updateKyc(check.id, "REJECTED")}>Reject</button></div></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      </div>
+      <Card className="mt-4 overflow-x-auto">
+        <h2 className="text-xl font-semibold text-white">Support tickets</h2>
+        <table className="mt-4 w-full min-w-[900px] text-left text-sm">
+          <thead className="border-b border-white/10 text-xs uppercase tracking-[0.14em] text-slate-500">
+            <tr><th className="py-3">User</th><th>Subject</th><th>Priority</th><th>Status</th><th>Response</th></tr>
+          </thead>
+          <tbody className="divide-y divide-white/10">
+            {tickets.map((ticket) => (
+              <tr key={ticket.id}>
+                <td className="py-4 pr-4 text-white">{adminDisplayName(ticket.user)}</td>
+                <td className="py-4 pr-4 text-slate-300">{ticket.subject}<p className="mt-1 max-w-md text-xs text-slate-500">{ticket.message}</p></td>
+                <td className="py-4 pr-4 text-slate-300">{ticket.priority}</td>
+                <td className="py-4 pr-4"><StatusBadge status={ticket.status} /></td>
+                <td className="py-4"><div className="grid min-w-[300px] gap-2"><textarea className="focus-ring min-h-20 rounded-md border border-white/10 bg-white/10 px-3 py-2 text-white" onChange={(event) => setResponses((current) => ({ ...current, [ticket.id]: event.target.value }))} placeholder={ticket.adminResponse || "Response"} value={responses[ticket.id] || ""} /><button className="focus-ring rounded-md bg-mint px-3 py-2 font-semibold text-ink" onClick={() => respondTicket(ticket.id)}>Respond</button></div></td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </Card>

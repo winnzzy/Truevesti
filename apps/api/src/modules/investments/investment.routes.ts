@@ -1,39 +1,16 @@
 import { Router } from "express";
 import { z } from "zod";
+import { getUserBalance } from "../../lib/balances.js";
+import { computeAccrualSnapshot, expectedReturnForPlan } from "../../lib/investment-math.js";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
 export const investmentRouter = Router();
 
-function computeInvestmentAccrual(investment: { principalUsd: string; startedAt: Date; maturesAt: Date; plan: { durationDays: number; estimatedYieldMin: string; estimatedYieldMax: string } }) {
-  const principal = Number(investment.principalUsd);
-  const durationDays = investment.plan.durationDays;
-  const yieldMin = Number(investment.plan.estimatedYieldMin) || 0;
-  const yieldMax = Number(investment.plan.estimatedYieldMax) || 0;
-  const avgYield = (yieldMin + yieldMax) / 2;
-  const totalInterest = principal * avgYield;
-  const dailyAccrual = durationDays > 0 ? totalInterest / durationDays : 0;
-
-  const elapsedMillis = Math.max(0, Math.min(Date.now() - investment.startedAt.getTime(), durationDays * 24 * 60 * 60 * 1000));
-  const elapsedDays = durationDays > 0 ? Math.floor(elapsedMillis / (24 * 60 * 60 * 1000)) : 0;
-  const accruedInterest = Math.min(totalInterest, dailyAccrual * elapsedDays);
-  const daysElapsed = elapsedDays;
-
-  return {
-    projectedPayoutUsd: (principal + totalInterest).toFixed(2),
-    dailyAccrualUsd: dailyAccrual.toFixed(2),
-    accruedInterestUsd: accruedInterest.toFixed(2),
-    yieldPercent: Math.round(avgYield * 100),
-    daysElapsed,
-    daysRemaining: Math.max(0, durationDays - elapsedDays),
-    progressPercent: durationDays > 0 ? Math.min(100, Math.round((elapsedDays / durationDays) * 100)) : 0
-  };
-}
-
 function enrichInvestment(investment: any) {
   return {
     ...investment,
-    ...computeInvestmentAccrual(investment)
+    ...computeAccrualSnapshot(investment)
   };
 }
 
@@ -49,7 +26,8 @@ investmentRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthReq
     orderBy: { startedAt: "desc" },
     take: 50
   });
-  res.json({ investments: investments.map(enrichInvestment) });
+  const balance = await getUserBalance(req.user!.id);
+  res.json({ investments: investments.map(enrichInvestment), balance });
 });
 
 investmentRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
@@ -68,14 +46,19 @@ investmentRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
   if (!plan.supportedAssets.includes(input.assetSymbol)) {
     return res.status(400).json({ error: "Asset is not supported by this plan" });
   }
+  const balance = await getUserBalance(req.user!.id);
+  if (principalUsd > Number(balance.availableUsd)) {
+    return res.status(400).json({ error: "Investment amount exceeds available approved balance" });
+  }
 
   const maturesAt = new Date(Date.now() + plan.durationDays * 24 * 60 * 60 * 1000);
-  await prisma.$transaction(async (tx: any) => {
-  const investment = await tx.investment.create({
+  const investment = await prisma.$transaction(async (tx: any) => {
+    const created = await tx.investment.create({
       data: {
         userId: req.user!.id,
         planId: plan.id,
         principalUsd,
+        expectedReturnUsd: expectedReturnForPlan(principalUsd, plan),
         assetSymbol: input.assetSymbol,
         maturesAt,
         disclosureHash: input.disclosureHash
@@ -87,7 +70,7 @@ investmentRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
         actorId: req.user!.id,
         action: "INVESTMENT_CREATED",
         entity: "Investment",
-        entityId: investment.id,
+        entityId: created.id,
         ipAddress: req.ip
       }
     });
@@ -98,7 +81,7 @@ investmentRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
         body: `${plan.name} investment is active and scheduled to mature on ${maturesAt.toISOString().slice(0, 10)}.`
       }
     });
-    return investment;
+    return created;
   });
-  res.status(201).json({ message: "Investment created successfully" });
+  res.status(201).json({ investment: enrichInvestment(investment), message: "Investment created successfully" });
 });

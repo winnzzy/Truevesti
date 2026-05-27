@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { getUserBalance } from "../../lib/balances.js";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
@@ -17,26 +18,21 @@ withdrawalRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthReq
 
 withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const input = z.object({
-    investmentId: z.string(),
-    assetSymbol: z.enum(["BTC", "ETH", "USDT", "USDC", "SOL", "BNB"]),
+    assetSymbol: z.enum(["BTC", "ETH", "USDT"]),
     network: z.string().min(2),
     destination: z.string().min(16),
     amountUsd: z.number().positive()
   }).parse(req.body);
 
-  const investment = await prisma.investment.findFirstOrThrow({
-    where: { id: input.investmentId, userId: req.user!.id },
-    include: { plan: true }
-  });
-  if (investment.maturesAt > new Date()) return res.status(400).json({ error: "Investment has not matured" });
-  if (!["ACTIVE", "MATURED"].includes(investment.status)) return res.status(400).json({ error: "Investment is not eligible for withdrawal" });
-  if (Number(input.amountUsd) > Number(investment.principalUsd)) return res.status(400).json({ error: "Withdrawal exceeds investment principal" });
+  const balance = await getUserBalance(req.user!.id);
+  if (Number(input.amountUsd) > Number(balance.availableUsd)) {
+    return res.status(400).json({ error: "Withdrawal amount exceeds available balance" });
+  }
 
   const withdrawal = await prisma.$transaction(async (tx: any) => {
     const created = await tx.withdrawal.create({
       data: {
         userId: req.user!.id,
-        investmentId: investment.id,
         assetSymbol: input.assetSymbol,
         network: input.network,
         destination: input.destination,
@@ -56,7 +52,7 @@ withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
       data: {
         userId: req.user!.id,
         title: "Withdrawal request received",
-        body: `${investment.plan.name} withdrawal is pending compliance review.`
+        body: "Your withdrawal request is pending operations review."
       }
     });
     return created;

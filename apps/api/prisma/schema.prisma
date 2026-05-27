@@ -22,8 +22,10 @@ enum VerificationStatus {
 
 enum TransactionStatus {
   PENDING
+  APPROVED
   CONFIRMING
   CONFIRMED
+  PAID
   REJECTED
   FAILED
 }
@@ -31,6 +33,7 @@ enum TransactionStatus {
 enum InvestmentStatus {
   ACTIVE
   MATURED
+  COMPLETED
   WITHDRAWN
   CANCELLED
 }
@@ -103,6 +106,7 @@ model InvestmentPlan {
   estimatedYieldMin Decimal    @db.Decimal(8, 4)
   estimatedYieldMax Decimal    @db.Decimal(8, 4)
   riskLevel       String
+  riskNote        String?      @db.Text
   assetAllocation String
   supportedAssets String[]
   isActive        Boolean      @default(true)
@@ -116,10 +120,12 @@ model Investment {
   userId         String
   planId         String
   principalUsd   Decimal          @db.Decimal(18, 2)
+  expectedReturnUsd Decimal        @default(0) @db.Decimal(18, 2)
   assetSymbol    String
   status         InvestmentStatus @default(ACTIVE)
   startedAt      DateTime         @default(now())
   maturesAt      DateTime
+  completedAt    DateTime?
   withdrawnAt    DateTime?
   disclosureHash String
   user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -176,8 +182,12 @@ model Withdrawal {
   txHash          String?           @unique
   status          TransactionStatus @default(PENDING)
   riskDecision    String?
+  rejectionReason String?           @db.Text
+  adminNote       String?           @db.Text
   approvedById    String?
   createdAt       DateTime          @default(now())
+  approvedAt      DateTime?
+  paidAt          DateTime?
   processedAt     DateTime?
   user            User              @relation(fields: [userId], references: [id], onDelete: Restrict)
   investment      Investment?       @relation(fields: [investmentId], references: [id], onDelete: SetNull)
@@ -200,6 +210,8 @@ model SupportTicket {
   userId    String
   subject   String
   message   String   @db.Text
+  adminResponse String? @db.Text
+  respondedAt DateTime?
   status    String   @default("OPEN")
   priority  String   @default("NORMAL")
   createdAt DateTime @default(now())

@@ -3,12 +3,31 @@ import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { getReadinessChecks } from "../../lib/readiness.js";
 import { runDailyAccruals } from "../../lib/accruals.js";
+import { getUserBalance } from "../../lib/balances.js";
 import { deleteUserByEmail } from "../../lib/delete-user.js";
 import { sendError } from "../../lib/http-errors.js";
 import { depositDecisionSchema, walletAddressSchema, walletAddressUpdateSchema } from "../../lib/manual-deposits.js";
-import { requireAuth, requireRole } from "../../middleware/auth.js";
+import { requireAuth, requireRole, type AuthRequest } from "../../middleware/auth.js";
 
 export const adminRouter = Router();
+
+const planSchema = z.object({
+  name: z.string().min(2),
+  minDepositUsd: z.number().positive(),
+  maxDepositUsd: z.number().positive(),
+  durationDays: z.number().int().positive(),
+  estimatedYieldMin: z.number().nonnegative(),
+  estimatedYieldMax: z.number().nonnegative(),
+  riskLevel: z.string().min(2),
+  riskNote: z.string().max(2000).optional(),
+  assetAllocation: z.string().min(2),
+  supportedAssets: z.array(z.string()).min(1),
+  isActive: z.boolean().optional()
+});
+
+function actorId(req: AuthRequest) {
+  return req.user!.id;
+}
 
 /** No Render Shell needed — call from PowerShell with x-purge-secret header. */
 adminRouter.post("/purge-user", async (req, res) => {
@@ -35,14 +54,36 @@ adminRouter.post("/purge-user", async (req, res) => {
 adminRouter.use(requireAuth, requireRole("ADMIN"));
 
 adminRouter.get("/overview", async (_req, res) => {
-  const [users, pendingWithdrawals, pendingDeposits, pendingKyc, openTickets] = await Promise.all([
+  const [users, pendingWithdrawals, pendingDeposits, activeInvestments, pendingKyc, openTickets] = await Promise.all([
     prisma.user.count(),
     prisma.withdrawal.count({ where: { status: "PENDING" } }),
     prisma.deposit.count({ where: { status: "PENDING" } }),
+    prisma.investment.count({ where: { status: "ACTIVE" } }),
     prisma.kycCheck.count({ where: { status: "PENDING" } }),
     prisma.supportTicket.count({ where: { status: "OPEN" } })
   ]);
-  res.json({ users, pendingWithdrawals, pendingDeposits, pendingKyc, openTickets });
+  res.json({ users, pendingWithdrawals, pendingDeposits, activeInvestments, pendingKyc, openTickets });
+});
+
+adminRouter.get("/users", async (_req, res) => {
+  const users = await prisma.user.findMany({
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      emailVerifiedAt: true,
+      createdAt: true,
+      profile: true,
+      _count: { select: { investments: true, deposits: true, withdrawals: true, tickets: true } }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100
+  });
+  const withBalances = await Promise.all(users.map(async (user) => ({
+    ...user,
+    balance: await getUserBalance(user.id)
+  })));
+  res.json({ users: withBalances });
 });
 
 adminRouter.get("/audit-logs", async (_req, res) => {
@@ -57,29 +98,53 @@ adminRouter.get("/company-wallets", async (_req, res) => {
   res.json({ wallets });
 });
 
-adminRouter.post("/company-wallets", async (req, res) => {
+adminRouter.post("/company-wallets", async (req: AuthRequest, res) => {
   const input = walletAddressSchema.parse(req.body);
-  const wallet = await prisma.companyWalletAddress.upsert({
-    where: {
-      assetSymbol_network: {
-        assetSymbol: input.assetSymbol,
-        network: input.network
+  const wallet = await prisma.$transaction(async (tx) => {
+    const saved = await tx.companyWalletAddress.upsert({
+      where: {
+        assetSymbol_network: {
+          assetSymbol: input.assetSymbol,
+          network: input.network
+        }
+      },
+      update: input,
+      create: {
+        ...input,
+        isActive: input.isActive ?? true
       }
-    },
-    update: input,
-    create: {
-      ...input,
-      isActive: input.isActive ?? true
-    }
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId: actorId(req),
+        action: "COMPANY_WALLET_SAVED",
+        entity: "CompanyWalletAddress",
+        entityId: saved.id,
+        ipAddress: req.ip
+      }
+    });
+    return saved;
   });
   res.status(201).json({ wallet });
 });
 
-adminRouter.patch("/company-wallets/:id", async (req, res) => {
+adminRouter.patch("/company-wallets/:id", async (req: AuthRequest, res) => {
   const input = walletAddressUpdateSchema.parse(req.body);
-  const wallet = await prisma.companyWalletAddress.update({
-    where: { id: req.params.id },
-    data: input
+  const wallet = await prisma.$transaction(async (tx) => {
+    const saved = await tx.companyWalletAddress.update({
+      where: { id: req.params.id },
+      data: input
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId: actorId(req),
+        action: "COMPANY_WALLET_UPDATED",
+        entity: "CompanyWalletAddress",
+        entityId: saved.id,
+        ipAddress: req.ip
+      }
+    });
+    return saved;
   });
   res.json({ wallet });
 });
@@ -110,32 +175,60 @@ adminRouter.get("/readiness", async (_req, res) => {
   });
 });
 
-adminRouter.post("/plans", async (req, res) => {
-  const input = z.object({
-    name: z.string().min(2),
-    minDepositUsd: z.number().positive(),
-    maxDepositUsd: z.number().positive(),
-    durationDays: z.number().int().positive(),
-    estimatedYieldMin: z.number().nonnegative(),
-    estimatedYieldMax: z.number().nonnegative(),
-    riskLevel: z.string(),
-    assetAllocation: z.string(),
-    supportedAssets: z.array(z.string()).min(1)
-  }).parse(req.body);
-  const plan = await prisma.investmentPlan.create({ data: input });
+adminRouter.get("/plans", async (_req, res) => {
+  const plans = await prisma.investmentPlan.findMany({ orderBy: { minDepositUsd: "asc" } });
+  res.json({ plans });
+});
+
+adminRouter.post("/plans", async (req: AuthRequest, res) => {
+  const input = planSchema.parse(req.body);
+  const plan = await prisma.$transaction(async (tx) => {
+    const created = await tx.investmentPlan.create({ data: { ...input, isActive: input.isActive ?? true } });
+    await tx.auditLog.create({
+      data: {
+        actorId: actorId(req),
+        action: "INVESTMENT_PLAN_CREATED",
+        entity: "InvestmentPlan",
+        entityId: created.id,
+        ipAddress: req.ip
+      }
+    });
+    return created;
+  });
   res.status(201).json({ plan });
 });
 
-adminRouter.patch("/withdrawals/:id/decision", async (req, res) => {
-  const input = z.object({ status: z.enum(["CONFIRMED", "REJECTED"]), riskDecision: z.string().optional() }).parse(req.body);
-  const withdrawal = await prisma.withdrawal.update({
-    where: { id: req.params.id },
-    data: { status: input.status, riskDecision: input.riskDecision, processedAt: new Date() }
+adminRouter.patch("/plans/:id", async (req: AuthRequest, res) => {
+  const input = planSchema.partial().parse(req.body);
+  const plan = await prisma.$transaction(async (tx) => {
+    const updated = await tx.investmentPlan.update({ where: { id: req.params.id }, data: input });
+    await tx.auditLog.create({
+      data: {
+        actorId: actorId(req),
+        action: "INVESTMENT_PLAN_UPDATED",
+        entity: "InvestmentPlan",
+        entityId: updated.id,
+        ipAddress: req.ip
+      }
+    });
+    return updated;
   });
-  res.json({ withdrawal });
+  res.json({ plan });
 });
 
-adminRouter.patch("/deposits/:id/decision", async (req, res) => {
+adminRouter.get("/investments", async (_req, res) => {
+  const investments = await prisma.investment.findMany({
+    include: {
+      user: { select: { email: true, profile: true } },
+      plan: true
+    },
+    orderBy: { startedAt: "desc" },
+    take: 100
+  });
+  res.json({ investments });
+});
+
+adminRouter.patch("/deposits/:id/decision", async (req: AuthRequest, res) => {
   const input = depositDecisionSchema.parse(req.body);
   const deposit = await prisma.$transaction(async (tx) => {
     const updated = await tx.deposit.update({
@@ -150,9 +243,11 @@ adminRouter.patch("/deposits/:id/decision", async (req, res) => {
     });
     await tx.auditLog.create({
       data: {
+        actorId: actorId(req),
         action: input.status === "CONFIRMED" ? "DEPOSIT_APPROVED" : "DEPOSIT_REJECTED",
         entity: "Deposit",
         entityId: updated.id,
+        ipAddress: req.ip,
         metadata: input.status === "REJECTED" ? { reason: input.reason } : undefined
       }
     });
@@ -170,9 +265,158 @@ adminRouter.patch("/deposits/:id/decision", async (req, res) => {
   res.json({ deposit });
 });
 
-adminRouter.post("/run-accruals", async (_req, res) => {
+adminRouter.get("/withdrawals", async (_req, res) => {
+  const withdrawals = await prisma.withdrawal.findMany({
+    include: {
+      user: { select: { email: true, profile: true } }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100
+  });
+  res.json({ withdrawals });
+});
+
+adminRouter.get("/kyc", async (_req, res) => {
+  const checks = await prisma.kycCheck.findMany({
+    include: { user: { select: { email: true, profile: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 100
+  });
+  res.json({ checks });
+});
+
+adminRouter.patch("/kyc/:id/decision", async (req: AuthRequest, res) => {
+  const input = z.object({
+    status: z.enum(["VERIFIED", "REJECTED", "PENDING"]),
+    reason: z.string().max(1000).optional()
+  }).parse(req.body);
+  const check = await prisma.$transaction(async (tx) => {
+    const updated = await tx.kycCheck.update({ where: { id: req.params.id }, data: input });
+    await tx.auditLog.create({
+      data: {
+        actorId: actorId(req),
+        action: "KYC_STATUS_UPDATED",
+        entity: "KycCheck",
+        entityId: updated.id,
+        metadata: { status: input.status, reason: input.reason },
+        ipAddress: req.ip
+      }
+    });
+    await tx.notification.create({
+      data: {
+        userId: updated.userId,
+        title: "KYC status updated",
+        body: `Your KYC status is now ${input.status}.`
+      }
+    });
+    return updated;
+  });
+  res.json({ check });
+});
+
+adminRouter.get("/support/tickets", async (_req, res) => {
+  const tickets = await prisma.supportTicket.findMany({
+    include: { user: { select: { email: true, profile: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 100
+  });
+  res.json({ tickets });
+});
+
+adminRouter.patch("/support/tickets/:id", async (req: AuthRequest, res) => {
+  const input = z.object({
+    status: z.string().min(2).max(40),
+    adminResponse: z.string().min(3).max(4000)
+  }).parse(req.body);
+  const ticket = await prisma.$transaction(async (tx) => {
+    const updated = await tx.supportTicket.update({
+      where: { id: req.params.id },
+      data: { ...input, respondedAt: new Date() }
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId: actorId(req),
+        action: "SUPPORT_TICKET_RESPONDED",
+        entity: "SupportTicket",
+        entityId: updated.id,
+        ipAddress: req.ip
+      }
+    });
+    await tx.notification.create({
+      data: {
+        userId: updated.userId,
+        title: "Support ticket updated",
+        body: "Operations has responded to your support ticket."
+      }
+    });
+    return updated;
+  });
+  res.json({ ticket });
+});
+
+adminRouter.patch("/withdrawals/:id/decision", async (req: AuthRequest, res) => {
+  const input = z.discriminatedUnion("status", [
+    z.object({ status: z.literal("APPROVED"), adminNote: z.string().max(1000).optional() }),
+    z.object({ status: z.literal("REJECTED"), reason: z.string().min(3).max(1000) }),
+    z.object({ status: z.literal("PAID"), txHash: z.string().min(8), adminNote: z.string().max(1000).optional() })
+  ]).parse(req.body);
+
+  const existing = await prisma.withdrawal.findUniqueOrThrow({ where: { id: req.params.id } });
+  if (input.status === "APPROVED") {
+    const balance = await getUserBalance(existing.userId);
+    if (Number(existing.amountUsd) > Number(balance.availableUsd)) {
+      return res.status(400).json({ error: "Withdrawal exceeds available balance" });
+    }
+  }
+
+  const withdrawal = await prisma.$transaction(async (tx) => {
+    const updated = await tx.withdrawal.update({
+      where: { id: req.params.id },
+      data: input.status === "APPROVED"
+        ? { status: "APPROVED", approvedById: actorId(req), approvedAt: new Date(), adminNote: input.adminNote, processedAt: new Date() }
+        : input.status === "REJECTED"
+          ? { status: "REJECTED", rejectionReason: input.reason, processedAt: new Date() }
+          : { status: "PAID", txHash: input.txHash, adminNote: input.adminNote, paidAt: new Date(), processedAt: new Date() }
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId: actorId(req),
+        action: `WITHDRAWAL_${input.status}`,
+        entity: "Withdrawal",
+        entityId: updated.id,
+        metadata: input.status === "REJECTED" ? { reason: input.reason } : undefined,
+        ipAddress: req.ip
+      }
+    });
+    await tx.notification.create({
+      data: {
+        userId: updated.userId,
+        title: input.status === "PAID" ? "Withdrawal paid" : input.status === "APPROVED" ? "Withdrawal approved" : "Withdrawal rejected",
+        body: input.status === "PAID"
+          ? "Your withdrawal has been marked as paid by operations."
+          : input.status === "APPROVED"
+            ? "Your withdrawal has been approved and is awaiting manual payout."
+            : `Your withdrawal was rejected: ${input.reason}`
+      }
+    });
+    return updated;
+  });
+
+  res.json({ withdrawal });
+});
+
+adminRouter.post("/run-accruals", async (req: AuthRequest, res) => {
   try {
     const result = await runDailyAccruals();
+    await prisma.auditLog.create({
+      data: {
+        actorId: actorId(req),
+        action: "ACCRUALS_RUN",
+        entity: "Investment",
+        metadata: result,
+        ipAddress: req.ip
+      }
+    });
     res.json({ ok: true, result });
   } catch (err) {
     res.status(500).json({ ok: false, error: String(err) });

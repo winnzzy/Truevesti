@@ -28,6 +28,7 @@ type Plan = {
   estimatedYieldMin: string;
   estimatedYieldMax: string;
   riskLevel: string;
+  riskNote?: string | null;
   assetAllocation: string;
   supportedAssets: string[];
 };
@@ -35,6 +36,7 @@ type Plan = {
 type Investment = {
   id: string;
   principalUsd: string;
+  expectedReturnUsd: string;
   assetSymbol: string;
   status: string;
   startedAt: string;
@@ -43,6 +45,7 @@ type Investment = {
   projectedPayoutUsd: string;
   dailyAccrualUsd: string;
   accruedInterestUsd: string;
+  currentAccruedValueUsd: string;
   yieldPercent: number;
   daysRemaining: number;
   progressPercent: number;
@@ -81,6 +84,10 @@ type Withdrawal = {
   status: string;
   destination: string;
   network: string;
+  txHash?: string | null;
+  paidAt?: string | null;
+  adminNote?: string | null;
+  rejectionReason?: string | null;
   createdAt: string;
   investment?: { plan?: { name: string } } | null;
 };
@@ -121,6 +128,13 @@ type DashboardData = {
   kycChecks: KycCheck[];
   currentKyc: KycCheck | null;
   tickets: Ticket[];
+  balance: {
+    depositedUsd: string;
+    activeInvestmentPrincipalUsd: string;
+    completedReturnUsd: string;
+    lockedWithdrawalUsd: string;
+    availableUsd: string;
+  };
 };
 
 const emptyData: DashboardData = {
@@ -132,7 +146,14 @@ const emptyData: DashboardData = {
   notifications: [],
   kycChecks: [],
   currentKyc: null,
-  tickets: []
+  tickets: [],
+  balance: {
+    depositedUsd: "0.00",
+    activeInvestmentPrincipalUsd: "0.00",
+    completedReturnUsd: "0.00",
+    lockedWithdrawalUsd: "0.00",
+    availableUsd: "0.00"
+  }
 };
 
 const assets = ["USDC", "USDT", "BTC", "ETH", "SOL", "BNB"];
@@ -211,10 +232,8 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
   const [depositOptionKey, setDepositOptionKey] = useState("");
   const [depositAmount, setDepositAmount] = useState("500");
   const [depositTxHash, setDepositTxHash] = useState("");
-  const [withdrawalInvestmentId, setWithdrawalInvestmentId] = useState("");
   const [withdrawalAmount, setWithdrawalAmount] = useState("500");
-  const [withdrawalAsset, setWithdrawalAsset] = useState("USDC");
-  const [withdrawalNetwork, setWithdrawalNetwork] = useState("Ethereum");
+  const [withdrawalOptionKey, setWithdrawalOptionKey] = useState("");
   const [withdrawalDestination, setWithdrawalDestination] = useState("");
   const [ticketSubject, setTicketSubject] = useState("");
   const [ticketPriority, setTicketPriority] = useState("NORMAL");
@@ -235,7 +254,7 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
       const [plans, depositOptions, investments, deposits, withdrawals, notifications, kyc, support] = await Promise.all([
         apiRequest<{ plans: Plan[] }>("/investments/plans"),
         headers ? apiRequest<{ options: DepositOption[] }>("/payments/deposit-options", { headers }) : Promise.resolve({ options: [] }),
-        headers ? apiRequest<{ investments: Investment[] }>("/investments", { headers }) : Promise.resolve({ investments: [] }),
+        headers ? apiRequest<{ investments: Investment[]; balance: DashboardData["balance"] }>("/investments", { headers }) : Promise.resolve({ investments: [], balance: emptyData.balance }),
         headers ? apiRequest<{ deposits: Deposit[] }>("/payments/deposits", { headers }) : Promise.resolve({ deposits: [] }),
         headers ? apiRequest<{ withdrawals: Withdrawal[] }>("/withdrawals", { headers }) : Promise.resolve({ withdrawals: [] }),
         headers ? apiRequest<{ notifications: Notification[] }>("/notifications", { headers }) : Promise.resolve({ notifications: [] }),
@@ -251,11 +270,12 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
         notifications: notifications.notifications,
         kycChecks: kyc.checks,
         currentKyc: kyc.current,
-        tickets: support.tickets
+        tickets: support.tickets,
+        balance: investments.balance
       });
       setSelectedPlanId((current) => current || plans.plans[0]?.id || "");
       setDepositOptionKey((current) => current || depositOptions.options.find((option) => option.wallet)?.label || depositOptions.options[0]?.label || "");
-      setWithdrawalInvestmentId((current) => current || investments.investments.find((item) => new Date(item.maturesAt) <= new Date())?.id || "");
+      setWithdrawalOptionKey((current) => current || depositOptions.options.find((option) => option.wallet)?.label || depositOptions.options[0]?.label || "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load dashboard");
     } finally {
@@ -346,23 +366,26 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
 
   async function createWithdrawal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!withdrawalInvestmentId) return setError("Select a matured investment before requesting withdrawal.");
     setStatus("");
     setError("");
     try {
+      const option = data.depositOptions.find((item) => item.label === withdrawalOptionKey);
+      if (!option) {
+        setError("Select a coin and network before requesting withdrawal.");
+        return;
+      }
       await apiRequest<{ withdrawal: Withdrawal }>("/withdrawals", {
         method: "POST",
         headers,
         body: JSON.stringify({
-          investmentId: withdrawalInvestmentId,
-          assetSymbol: withdrawalAsset,
-          network: withdrawalNetwork,
+          assetSymbol: option.assetSymbol,
+          network: option.network,
           destination: withdrawalDestination,
           amountUsd: Number(withdrawalAmount)
         })
       });
       setWithdrawalDestination("");
-      setStatus("Withdrawal request submitted for manual admin and compliance review.");
+      setStatus("Withdrawal request submitted for manual review.");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to request withdrawal");
@@ -405,14 +428,12 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
     }
   }
 
-  const confirmedDeposits = data.deposits.filter((item) => item.status === "CONFIRMED");
-  const totalDeposited = confirmedDeposits.reduce((sum, item) => sum + Number(item.amountUsd ?? 0), 0);
+  const totalDeposited = Number(data.balance.depositedUsd);
   const activeInvestments = data.investments.filter((item) => item.status === "ACTIVE");
   const activeInvestmentTotal = activeInvestments.reduce((sum, item) => sum + Number(item.principalUsd), 0);
   const totalAccrual = data.investments.reduce((sum, item) => sum + Number(item.accruedInterestUsd ?? 0), 0);
   const pendingWithdrawals = data.withdrawals.filter((item) => item.status === "PENDING").reduce((sum, item) => sum + Number(item.amountUsd), 0);
-  const maturedInvestments = data.investments.filter((item) => new Date(item.maturesAt) <= new Date() && ["ACTIVE", "MATURED"].includes(item.status));
-  const withdrawalBalance = maturedInvestments.reduce((sum, item) => sum + Number(item.principalUsd) + Number(item.accruedInterestUsd ?? 0), 0) - pendingWithdrawals;
+  const withdrawalBalance = Number(data.balance.availableUsd);
   const pendingDeposits = data.deposits.filter((item) => item.status === "PENDING").reduce((sum, item) => sum + Number(item.amountUsd ?? 0), 0);
   const investorName = userDisplayName(session?.user);
   const selectedDepositOption = data.depositOptions.find((item) => item.label === depositOptionKey);
@@ -601,15 +622,13 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
           {currentSection === "withdrawals" ? (
             <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
               <Card>
-                <h2 className="text-lg font-semibold text-white">Request withdrawal</h2>
-                <p className="mt-2 text-sm text-slate-400">Available after investment maturity and subject to manual admin review.</p>
+                  <h2 className="text-lg font-semibold text-white">Request withdrawal</h2>
+                <p className="mt-2 text-sm text-slate-400">Available balance: {money(data.balance.availableUsd)}. Requests are reviewed and paid manually.</p>
                 <form className="mt-4 grid gap-3" onSubmit={createWithdrawal}>
-                  <FieldLabel>Investment<select className={inputClass()} disabled={!maturedInvestments.length} onChange={(event) => setWithdrawalInvestmentId(event.target.value)} value={withdrawalInvestmentId}>{maturedInvestments.length ? maturedInvestments.map((item) => <option key={item.id} value={item.id}>{item.plan.name} · {money(item.principalUsd)}</option>) : <option>No matured investments</option>}</select></FieldLabel>
+                  <FieldLabel>Coin / network<select className={inputClass()} onChange={(event) => setWithdrawalOptionKey(event.target.value)} value={withdrawalOptionKey}>{data.depositOptions.map((option) => <option key={option.label} value={option.label}>{option.label}</option>)}</select></FieldLabel>
                   <FieldLabel>Amount USD<input className={inputClass()} min="1" onChange={(event) => setWithdrawalAmount(event.target.value)} type="number" value={withdrawalAmount} /></FieldLabel>
-                  <FieldLabel>Asset<select className={inputClass()} onChange={(event) => setWithdrawalAsset(event.target.value)} value={withdrawalAsset}>{assets.map((asset) => <option key={asset}>{asset}</option>)}</select></FieldLabel>
-                  <FieldLabel>Network<input className={inputClass()} onChange={(event) => setWithdrawalNetwork(event.target.value)} value={withdrawalNetwork} /></FieldLabel>
                   <FieldLabel>Destination<input className={inputClass()} minLength={16} onChange={(event) => setWithdrawalDestination(event.target.value)} required value={withdrawalDestination} /></FieldLabel>
-                  <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink" disabled={!maturedInvestments.length}>Submit withdrawal</button>
+                  <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink">Submit withdrawal</button>
                 </form>
               </Card>
               <Card>
@@ -617,7 +636,7 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
                 <DataTable
                   columns={["Investment", "Asset", "Amount", "Status", "Requested"]}
                   empty="No withdrawal requests yet."
-                  rows={data.withdrawals.map((item) => [item.investment?.plan?.name || "Balance", item.assetSymbol, money(item.amountUsd), <StatusPill key={item.id} status={item.status} />, date(item.createdAt)])}
+                  rows={data.withdrawals.map((item) => [item.network, item.assetSymbol, money(item.amountUsd), <StatusPill key={item.id} status={item.status} />, item.status === "PAID" && item.txHash ? item.txHash : item.rejectionReason || date(item.createdAt)])}
                 />
               </Card>
             </div>

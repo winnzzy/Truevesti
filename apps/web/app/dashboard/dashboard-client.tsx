@@ -15,7 +15,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { Card } from "@/components/card";
 import { Nav } from "@/components/nav";
-import { apiRequest, readSession, writeSession, type AuthSession } from "@/lib/api";
+import { apiRequest, readSession, userDisplayName, writeSession, type AuthSession } from "@/lib/api";
 
 type Section = "overview" | "plans" | "deposits" | "withdrawals" | "kyc" | "notifications" | "support";
 
@@ -414,7 +414,7 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
   const maturedInvestments = data.investments.filter((item) => new Date(item.maturesAt) <= new Date() && ["ACTIVE", "MATURED"].includes(item.status));
   const withdrawalBalance = maturedInvestments.reduce((sum, item) => sum + Number(item.principalUsd) + Number(item.accruedInterestUsd ?? 0), 0) - pendingWithdrawals;
   const pendingDeposits = data.deposits.filter((item) => item.status === "PENDING").reduce((sum, item) => sum + Number(item.amountUsd ?? 0), 0);
-  const investorName = session?.user.email.split("@")[0] || "Investor";
+  const investorName = userDisplayName(session?.user);
   const selectedDepositOption = data.depositOptions.find((item) => item.label === depositOptionKey);
 
   if (isLoading) {

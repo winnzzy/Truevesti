@@ -3,10 +3,12 @@ import { Nav } from "@/components/nav";
 import { RiskBanner } from "@/components/risk-banner";
 import { PlanGrid } from "@/components/plan-grid";
 import { HeroScene } from "@/components/hero-scene";
+import { AuthHomeRedirect } from "@/components/auth-home-redirect";
 
 export default function HomePage() {
   return (
     <>
+      <AuthHomeRedirect />
       <Nav />
       <main>
         <section className="relative min-h-[86vh] overflow-hidden bg-ink">
@@ -52,7 +54,7 @@ export default function HomePage() {
           <div className="mx-auto grid max-w-7xl gap-4 px-5 py-10 md:grid-cols-4">
             {[
               ["Onboarding", "Risk consent, profile, KYC queue"],
-              ["Wallets", "Provider or mnemonic-backed deposits"],
+              ["Wallets", "Manual company-wallet deposits"],
               ["Investing", "Plan limits and maturity dates"],
               ["Operations", "Audit logs and admin review"]
             ].map(([title, detail]) => (

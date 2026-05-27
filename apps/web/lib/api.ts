@@ -24,8 +24,16 @@ export type AuthUser = {
   id: string;
   email: string;
   role: string;
+  firstName?: string | null;
+  lastName?: string | null;
   emailVerified?: boolean;
   phoneVerified?: boolean;
+  profile?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    country?: string | null;
+    timezone?: string | null;
+  } | null;
 };
 
 export type AuthSession = {
@@ -172,4 +180,10 @@ export function writeSession(session: AuthSession) {
 
 export function clearSession() {
   window.localStorage.removeItem("truevesti.session");
+}
+
+export function userDisplayName(user: AuthUser | null | undefined) {
+  const firstName = user?.firstName ?? user?.profile?.firstName;
+  const lastName = user?.lastName ?? user?.profile?.lastName;
+  return [firstName, lastName].filter(Boolean).join(" ").trim() || "Investor";
 }

@@ -31,7 +31,7 @@ export function Nav() {
       const s = readSession();
       if (!s) return;
       try {
-        const data = await apiRequest<{ user: { id: string; email: string; role: string; emailVerifiedAt?: string } }>("/auth/me");
+        const data = await apiRequest<{ user: AuthSession["user"] }>("/auth/me");
         if (!mounted) return;
         const updated = { ...s, user: data.user };
         writeSession(updated);
@@ -55,7 +55,6 @@ export function Nav() {
 
   const links = session
     ? [
-      ["Home", "/"],
       ["Dashboard", "/dashboard"],
       ["Contact", "/contact"],
       ...(session.user.role === "ADMIN" ? [["Admin", "/admin"]] : []),
@@ -67,7 +66,7 @@ export function Nav() {
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-ink/85 backdrop-blur">
       <nav className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4">
-        <Link href="/" className="text-xl font-semibold tracking-wide text-white">
+        <Link href={session ? "/dashboard" : "/"} className="text-xl font-semibold tracking-wide text-white">
           Truevesti
         </Link>
         <div className="hidden items-center gap-7 text-sm text-slate-300 md:flex">

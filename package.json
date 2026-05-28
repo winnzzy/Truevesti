@@ -25,6 +25,13 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@types/bcrypt": "latest",
+    "@types/cookie-parser": "latest",
+    "@types/cors": "latest",
+    "@types/express": "latest",
+    "@types/jsonwebtoken": "latest",
+    "@types/node": "latest",
+    "@types/nodemailer": "latest",
     "eslint": "^9.39.4"
   }
 }

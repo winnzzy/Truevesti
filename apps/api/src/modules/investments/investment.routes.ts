@@ -1,4 +1,5 @@
-import { Router, type Response } from "express";
+import { Router } from "express";
+import type { Request, Response } from "express";
 import { z } from "zod";
 import { getUserBalance } from "../../lib/balances.js";
 import { computeAccrualSnapshot, expectedReturnForPlan } from "../../lib/investment-math.js";
@@ -15,7 +16,7 @@ function enrichInvestment(investment: any) {
   };
 }
 
-investmentRouter.get("/plans", async (_req, res: Response) => {
+investmentRouter.get("/plans", async (_req: Request, res: Response) => {
   const plans = await prisma.investmentPlan.findMany({ where: { isActive: true }, orderBy: { minDepositUsd: "asc" } });
   res.json({ plans });
 });

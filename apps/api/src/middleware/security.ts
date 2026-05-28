@@ -1,4 +1,5 @@
 import cors from "cors";
+import type { CorsOptions } from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import type { Express } from "express";
@@ -10,19 +11,21 @@ export function applySecurity(app: Express) {
 
   const allowedOrigins = (process.env.WEB_ORIGIN || "https://truevesti-web.vercel.app")
     .split(",")
-    .map((origin) => origin.trim())
+    .map((origin: string) => origin.trim())
     .filter(Boolean);
 
-  app.use(cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.some((allowed) => origin === allowed || origin.endsWith(".vercel.app"))) {
+  const corsOptions: CorsOptions = {
+    origin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
+      if (!origin || allowedOrigins.some((allowed: string) => origin === allowed || origin.endsWith(".vercel.app"))) {
         callback(null, true);
       } else {
         callback(new Error("CORS origin not allowed"));
       }
     },
     credentials: true
-  }));
+  };
+
+  app.use(cors(corsOptions));
   app.use(
     rateLimit({
       windowMs: 15 * 60 * 1000,

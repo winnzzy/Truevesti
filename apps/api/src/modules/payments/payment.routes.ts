@@ -8,8 +8,8 @@ import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middl
 
 type DepositWalletOption = {
   id: string;
-  assetSymbol: string;
-  network: string;
+  assetSymbol?: string;
+  network?: string;
   address: string;
   instructions?: string;
 };
@@ -56,7 +56,7 @@ paymentRouter.get("/deposit-options", requireAuth, requireEmailVerified, async (
     where: { isActive: true },
     orderBy: [{ assetSymbol: "asc" }, { network: "asc" }]
   });
-  const configured = new Map(wallets.map((wallet) => [`${wallet.assetSymbol}:${wallet.network}`, wallet]));
+  const configured = new Map(wallets.map((wallet: DepositWalletOption) => [`${wallet.assetSymbol}:${wallet.network}`, wallet]));
 
   const options = await Promise.all(supportedManualDepositOptions.map(async (option) => {
     const wallet = configured.get(`${option.assetSymbol}:${option.network}`);

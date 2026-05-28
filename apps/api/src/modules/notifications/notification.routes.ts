@@ -10,7 +10,14 @@ notificationRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthR
     orderBy: { createdAt: "desc" },
     take: 50
   });
-  const unreadCount = notifications.filter((n) => !n.readAt).length;
+  const unreadCount = notifications.filter((n: {
+    id: string;
+    userId: string;
+    title: string;
+    body: string;
+    readAt: Date | null;
+    createdAt: Date;
+  }) => !n.readAt).length;
   res.json({ notifications, unreadCount });
 });
 

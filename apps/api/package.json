@@ -19,6 +19,13 @@
   "dependencies": {
     "@prisma/client": "^5.17.0",
     "@trustwallet/wallet-core": "^4.6.12",
+    "@types/bcrypt": "latest",
+    "@types/cookie-parser": "latest",
+    "@types/cors": "latest",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "latest",
+    "@types/node": "^24.0.0",
+    "@types/nodemailer": "latest",
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
@@ -33,13 +40,6 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/bcrypt": "latest",
-    "@types/cookie-parser": "latest",
-    "@types/cors": "latest",
-    "@types/express": "^5.0.0",
-    "@types/jsonwebtoken": "latest",
-    "@types/node": "^24.0.0",
-    "@types/nodemailer": "latest",
     "eslint": "^8.57.0",
     "prisma": "^5.17.0",
     "tsx": "^4.16.2",

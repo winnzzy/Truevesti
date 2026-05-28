@@ -1,0 +1,2 @@
+# Exclude vendored/generated code from GitHub language statistics
+wallet-core/** linguist-vendored

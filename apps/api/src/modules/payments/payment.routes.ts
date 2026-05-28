@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getUserBalance } from "../../lib/balances.js";
+import { getWalletProvider } from "../../lib/crypto-provider.js";
 import { manualDepositRequestSchema, supportedManualDepositOptions } from "../../lib/manual-deposits.js";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
@@ -27,44 +28,84 @@ paymentRouter.get("/deposit-options", requireAuth, requireEmailVerified, async (
   });
   const configured = new Map(wallets.map((wallet) => [`${wallet.assetSymbol}:${wallet.network}`, wallet]));
 
-  const options = supportedManualDepositOptions.map((option) => {
+  const provider = getWalletProvider();
+  const options = await Promise.all(supportedManualDepositOptions.map(async (option) => {
     const wallet = configured.get(`${option.assetSymbol}:${option.network}`);
-    return {
-      ...option,
-      wallet: wallet ? {
-        id: wallet.id,
-        address: wallet.address,
-        instructions: wallet.instructions
-      } : null
-    };
-  });
+    if (wallet) {
+      return {
+        ...option,
+        wallet: {
+          id: wallet.id,
+          address: wallet.address,
+          instructions: wallet.instructions
+        }
+      };
+    }
+
+    // Fall back to crypto-provider (mnemonic/static) for address generation
+    try {
+      const generated = await provider.getAddress(option.assetSymbol, option.network);
+      if (generated) {
+        return {
+          ...option,
+          wallet: {
+            id: `provider:${option.assetSymbol}:${option.network}`,
+            address: generated.address,
+            instructions: `Send only ${option.assetSymbol} on the ${option.network} network to this address. Sending other assets may result in permanent loss.${generated.derivationPath ? ` (Derived: ${generated.derivationPath})` : ""}`
+          }
+        };
+      }
+    } catch (err) {
+      console.error(`[payments] Failed to get address for ${option.assetSymbol}:${option.network}:`, err);
+    }
+
+    return { ...option, wallet: null };
+  }));
 
   res.json({ options });
 });
 
 paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const input = manualDepositRequestSchema.parse(req.body);
-  const wallet = await prisma.companyWalletAddress.findFirst({
+
+  // Look up admin-configured wallet first, then fall back to crypto-provider
+  let wallet = await prisma.companyWalletAddress.findFirst({
     where: {
       assetSymbol: input.assetSymbol,
       network: input.network,
       isActive: true
     }
   });
-  if (!wallet) {
-    return res.status(400).json({ error: "Deposit address is not configured for this coin and network" });
+
+  let depositAddress: string;
+  let walletId: string;
+  let provider = "manual-admin";
+
+  if (wallet) {
+    depositAddress = wallet.address;
+    walletId = wallet.id;
+  } else {
+    // Try crypto-provider (mnemonic/static) for address generation
+    const cryptoProvider = getWalletProvider();
+    const generated = await cryptoProvider.getAddress(input.assetSymbol, input.network);
+    if (!generated) {
+      return res.status(400).json({ error: "Deposit address is not configured for this coin and network" });
+    }
+    depositAddress = generated.address;
+    walletId = `provider:${input.assetSymbol}:${input.network}`;
+    provider = cryptoProvider.name;
   }
 
   const deposit = await prisma.$transaction(async (tx) => {
     const created = await tx.deposit.create({
       data: {
         userId: req.user!.id,
-        companyWalletId: wallet.id,
+        companyWalletId: walletId,
         assetSymbol: input.assetSymbol,
         network: input.network,
-        provider: "manual-admin",
-        providerAddressId: wallet.id,
-        depositAddress: wallet.address,
+        provider,
+        providerAddressId: walletId,
+        depositAddress,
         txHash: input.txHash,
         amountUsd: input.amountUsd,
         proofUrl: input.proofUrl,

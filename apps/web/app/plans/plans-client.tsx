@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { apiRequest, readSession } from "@/lib/api";
 
 type Plan = {
@@ -31,10 +31,20 @@ function riskColor(level: string) {
   return "border-slate-500/30 bg-slate-500/10 text-slate-200";
 }
 
+function inputClass() {
+  return "focus-ring w-full rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white placeholder:text-slate-500";
+}
+
 export function PlansClient() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [investingPlan, setInvestingPlan] = useState<Plan | null>(null);
+  const [investAmount, setInvestAmount] = useState("");
+  const [investAsset, setInvestAsset] = useState("USDC");
+  const [investStatus, setInvestStatus] = useState("");
+  const [investError, setInvestError] = useState("");
+  const [investLoading, setInvestLoading] = useState(false);
   const session = readSession();
 
   useEffect(() => {
@@ -45,6 +55,35 @@ export function PlansClient() {
       .finally(() => { if (mounted) setLoading(false); });
     return () => { mounted = false; };
   }, []);
+
+  async function handleInvest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!investingPlan || !session) return;
+    setInvestStatus("");
+    setInvestError("");
+    setInvestLoading(true);
+
+    try {
+      const headers = { Authorization: `Bearer ${session.accessToken}` };
+      await apiRequest("/investments", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          planId: investingPlan.id,
+          principalUsd: Number(investAmount),
+          assetSymbol: investAsset,
+          disclosureHash: `risk-disclosure-${Date.now()}`
+        })
+      });
+      setInvestStatus(`Successfully started ${investingPlan.name} investment with ${money(investAmount)} in ${investAsset}. Check your dashboard for details.`);
+      setInvestingPlan(null);
+      setInvestAmount("");
+    } catch (err) {
+      setInvestError(err instanceof Error ? err.message : "Unable to start investment");
+    } finally {
+      setInvestLoading(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -60,7 +99,7 @@ export function PlansClient() {
     return (
       <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-6 text-center">
         <p className="text-sm text-red-200">{error}</p>
-        <p className="mt-2 text-xs text-slate-400">Showing static plan information instead.</p>
+        <p className="mt-2 text-xs text-slate-400">Please try refreshing the page.</p>
       </div>
     );
   }
@@ -70,69 +109,140 @@ export function PlansClient() {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
-      {plans.map((plan) => {
-        const yieldMin = (Number(plan.estimatedYieldMin) * 100).toFixed(0);
-        const yieldMax = (Number(plan.estimatedYieldMax) * 100).toFixed(0);
-        const ctaHref = session ? "/dashboard/plans" : "/auth/signup";
+    <div>
+      {investStatus ? <p className="mb-4 rounded-md bg-mint/10 p-3 text-sm text-mint">{investStatus}</p> : null}
+      {investError ? <p className="mb-4 rounded-md bg-red-500/10 p-3 text-sm text-red-200">{investError}</p> : null}
 
-        return (
-          <div className="glass flex min-h-[340px] flex-col justify-between rounded-xl p-6" key={plan.id}>
+      {session && investingPlan ? (
+        <div className="mb-8 glass rounded-xl border border-mint/30 p-6">
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-xl font-semibold text-white">{plan.name}</h3>
-                  <p className="mt-1 text-sm text-slate-400">{plan.durationDays} days duration</p>
-                </div>
-                <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${riskColor(plan.riskLevel)}`}>
-                  {plan.riskLevel}
-                </span>
-              </div>
-
-              <p className="mt-5 text-3xl font-semibold text-mint">
-                {yieldMin}%–{yieldMax}%
-              </p>
-              <p className="mt-1 text-xs text-slate-400">Estimated annual yield</p>
-
-              <div className="mt-5 grid gap-2 text-sm text-slate-300">
-                <div className="flex justify-between">
-                  <span>Investment range</span>
-                  <span className="font-medium text-white">{money(plan.minDepositUsd)} – {money(plan.maxDepositUsd)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Supported assets</span>
-                  <span className="font-medium text-white">{plan.supportedAssets.join(", ")}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Allocation strategy</span>
-                  <span className="font-medium text-white text-right max-w-[200px]">{plan.assetAllocation}</span>
-                </div>
-              </div>
-
-              {plan.riskNote ? (
-                <p className="mt-4 rounded-md border border-white/10 bg-white/5 p-3 text-xs leading-5 text-slate-400">{plan.riskNote}</p>
-              ) : null}
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-mint">Invest now</p>
+              <h3 className="mt-1 text-xl font-semibold text-white">{investingPlan.name}</h3>
             </div>
-
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                className="focus-ring inline-flex flex-1 items-center justify-center rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink transition hover:bg-white"
-                href={ctaHref}
-              >
-                {session ? "Invest now" : "Get started"}
-              </Link>
-              {!session && (
-                <Link
-                  className="focus-ring inline-flex items-center justify-center rounded-md border border-white/20 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
-                  href="/auth/login"
-                >
-                  Sign in
-                </Link>
-              )}
-            </div>
+            <button
+              className="rounded-md border border-white/20 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10"
+              onClick={() => { setInvestingPlan(null); setInvestError(""); setInvestStatus(""); }}
+              type="button"
+            >
+              Cancel
+            </button>
           </div>
-        );
-      })}
+          <form className="mt-4 grid gap-3 sm:grid-cols-3" onSubmit={handleInvest}>
+            <label className="grid gap-1.5 text-sm font-medium text-slate-300">
+              Amount (USD)
+              <input
+                className={inputClass()}
+                max={Number(investingPlan.maxDepositUsd)}
+                min={Number(investingPlan.minDepositUsd)}
+                onChange={(e) => setInvestAmount(e.target.value)}
+                placeholder={`Min ${money(investingPlan.minDepositUsd)}`}
+                required
+                type="number"
+                value={investAmount}
+              />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium text-slate-300">
+              Asset
+              <select className={inputClass()} onChange={(e) => setInvestAsset(e.target.value)} value={investAsset}>
+                {investingPlan.supportedAssets.map((asset) => <option key={asset}>{asset}</option>)}
+              </select>
+            </label>
+            <div className="flex items-end">
+              <button
+                className="focus-ring w-full rounded-md bg-mint px-4 py-2.5 text-sm font-semibold text-ink disabled:opacity-50"
+                disabled={investLoading || !investAmount}
+                type="submit"
+              >
+                {investLoading ? "Starting..." : "Start investment"}
+              </button>
+            </div>
+          </form>
+          <p className="mt-3 text-xs text-slate-500">
+            Range: {money(investingPlan.minDepositUsd)} – {money(investingPlan.maxDepositUsd)} · Duration: {investingPlan.durationDays} days · Returns are estimates and may vary with market conditions.
+          </p>
+        </div>
+      ) : null}
+
+      <div className="grid gap-6 md:grid-cols-2">
+        {plans.map((plan) => {
+          const yieldMin = (Number(plan.estimatedYieldMin) * 100).toFixed(0);
+          const yieldMax = (Number(plan.estimatedYieldMax) * 100).toFixed(0);
+
+          return (
+            <div className="glass flex min-h-[340px] flex-col justify-between rounded-xl p-6" key={plan.id}>
+              <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-xl font-semibold text-white">{plan.name}</h3>
+                    <p className="mt-1 text-sm text-slate-400">{plan.durationDays} days duration</p>
+                  </div>
+                  <span className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${riskColor(plan.riskLevel)}`}>
+                    {plan.riskLevel}
+                  </span>
+                </div>
+
+                <p className="mt-5 text-3xl font-semibold text-mint">
+                  {yieldMin}%–{yieldMax}%
+                </p>
+                <p className="mt-1 text-xs text-slate-400">Estimated annual yield</p>
+
+                <div className="mt-5 grid gap-2 text-sm text-slate-300">
+                  <div className="flex justify-between">
+                    <span>Investment range</span>
+                    <span className="font-medium text-white">{money(plan.minDepositUsd)} – {money(plan.maxDepositUsd)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Supported assets</span>
+                    <span className="font-medium text-white">{plan.supportedAssets.join(", ")}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Allocation strategy</span>
+                    <span className="font-medium text-white text-right max-w-[200px]">{plan.assetAllocation}</span>
+                  </div>
+                </div>
+
+                {plan.riskNote ? (
+                  <p className="mt-4 rounded-md border border-white/10 bg-white/5 p-3 text-xs leading-5 text-slate-400">{plan.riskNote}</p>
+                ) : null}
+              </div>
+
+              <div className="mt-6 flex flex-wrap gap-3">
+                {session ? (
+                  <button
+                    className="focus-ring inline-flex flex-1 items-center justify-center rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink transition hover:bg-white"
+                    onClick={() => {
+                      setInvestingPlan(plan);
+                      setInvestAmount("");
+                      setInvestAsset(plan.supportedAssets[0] || "USDC");
+                      setInvestError("");
+                      setInvestStatus("");
+                    }}
+                    type="button"
+                  >
+                    Invest now
+                  </button>
+                ) : (
+                  <Link
+                    className="focus-ring inline-flex flex-1 items-center justify-center rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink transition hover:bg-white"
+                    href="/auth/signup"
+                  >
+                    Get started
+                  </Link>
+                )}
+                {!session && (
+                  <Link
+                    className="focus-ring inline-flex items-center justify-center rounded-md border border-white/20 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+                    href="/auth/login"
+                  >
+                    Sign in
+                  </Link>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -57,6 +57,7 @@ export function Nav() {
   const links = session
     ? [
       ["Dashboard", "/dashboard"],
+      ["Plans", "/plans"],
       ["About", "/about"],
       ["Contact", "/contact"],
       ["Pricing", "/pricing"],

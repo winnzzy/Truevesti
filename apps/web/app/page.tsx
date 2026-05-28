@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Nav } from "@/components/nav";
 import { RiskBanner } from "@/components/risk-banner";
-import { PlanGrid } from "@/components/plan-grid";
+import { PlanGridClient } from "@/components/plan-grid-client";
 import { HeroScene } from "@/components/hero-scene";
 import { AuthHomeRedirect } from "@/components/auth-home-redirect";
 
@@ -51,7 +51,7 @@ export default function HomePage() {
             <h2 className="text-3xl font-semibold text-white">Investment Plans</h2>
             <p className="mt-3 text-slate-300">Admin-configurable plans with clear ranges, duration, risk profile, and estimated returns.</p>
           </div>
-          <PlanGrid />
+          <PlanGridClient />
         </section>
         <section className="border-y border-white/10 bg-white/[0.03]">
           <div className="mx-auto grid max-w-7xl gap-4 px-5 py-10 md:grid-cols-4">

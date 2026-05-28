@@ -8,6 +8,7 @@ const publicLinks = [
   ["Home", "/"],
   ["About", "/about"],
   ["Plans", "/plans"],
+  ["Pricing", "/pricing"],
   ["FAQ", "/faq"],
   ["Legal", "/legal"]
 ];
@@ -56,9 +57,11 @@ export function Nav() {
   const links = session
     ? [
       ["Dashboard", "/dashboard"],
+      ["About", "/about"],
       ["Contact", "/contact"],
+      ["Pricing", "/pricing"],
       ...(session.user.role === "ADMIN" ? [["Admin", "/admin"]] : []),
-      ["Plans", "/plans"],
+      ["FAQ", "/faq"],
       ["Legal", "/legal"]
     ]
     : publicLinks;

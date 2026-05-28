@@ -37,6 +37,9 @@ export default function HomePage() {
                   <Link className="focus-ring rounded-md border border-white/20 px-5 py-3 font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/10" href="/plans">
                     View plans
                   </Link>
+                  <Link className="focus-ring rounded-md border border-white/20 px-5 py-3 font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/10" href="/pricing">
+                    Pricing
+                  </Link>
                 </div>
               </div>
             </div>

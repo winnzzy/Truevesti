@@ -3,7 +3,8 @@ import { DashboardClient } from "../dashboard-client";
 
 const sections = ["plans", "deposits", "withdrawals", "kyc", "notifications", "support"] as const;
 
-export default function DashboardSectionPage({ params }: { params: { section: string } }) {
-  if (!sections.includes(params.section as typeof sections[number])) notFound();
-  return <DashboardClient initialSection={params.section as typeof sections[number]} />;
+export default async function DashboardSectionPage({ params }: { params: Promise<{ section: string }> }) {
+  const { section } = await params;
+  if (!sections.includes(section as typeof sections[number])) notFound();
+  return <DashboardClient initialSection={section as typeof sections[number]} />;
 }

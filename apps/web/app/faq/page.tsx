@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Nav } from "@/components/nav";
 import { PageIntro } from "@/components/page-intro";
 
@@ -26,6 +27,12 @@ export default function FaqPage() {
                 <p className="mt-2 leading-7 text-slate-300">{answer}</p>
               </section>
             ))}
+          </div>
+          <div className="mt-10 rounded-lg border border-white/10 bg-white/[0.03] p-6 text-center">
+            <p className="text-sm text-slate-300">Still have questions?</p>
+            <Link className="focus-ring mt-3 inline-flex rounded-md bg-mint px-5 py-3 text-sm font-semibold text-ink transition hover:bg-white" href="/contact">
+              Contact support
+            </Link>
           </div>
         </section>
       </main>

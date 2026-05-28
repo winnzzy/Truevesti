@@ -80,7 +80,7 @@ adminRouter.get("/users", async (_req: Request, res: Response) => {
     orderBy: { createdAt: "desc" },
     take: 100
   });
-  const withBalances = await Promise.all(users.map(async (user) => ({
+  const withBalances = await Promise.all(users.map(async (user: typeof users[number]) => ({
     ...user,
     balance: await getUserBalance(user.id)
   })));

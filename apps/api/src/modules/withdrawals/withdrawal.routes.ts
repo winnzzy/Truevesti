@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { getUserBalance } from "../../lib/balances.js";
@@ -78,7 +79,7 @@ withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
     return res.status(400).json({ error: "Withdrawal amount exceeds available balance" });
   }
 
-  const withdrawal = await prisma.$transaction(async (tx) => {
+  const withdrawal = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const created = await tx.withdrawal.create({
       data: {
         userId: req.user!.id,

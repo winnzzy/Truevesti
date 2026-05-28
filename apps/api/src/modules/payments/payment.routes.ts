@@ -1,9 +1,18 @@
+import type { Prisma } from "@prisma/client";
 import { Router, type Response } from "express";
 import { getUserBalance } from "../../lib/balances.js";
 import { cryptoProvider } from "../../lib/crypto-provider.js";
 import { manualDepositRequestSchema, supportedManualDepositOptions } from "../../lib/manual-deposits.js";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
+
+type DepositWalletOption = {
+  id: string;
+  assetSymbol: string;
+  network: string;
+  address: string;
+  instructions?: string;
+};
 
 export const paymentRouter = Router();
 
@@ -127,7 +136,7 @@ paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async 
     }
   }
 
-  const deposit = await prisma.$transaction(async (tx) => {
+  const deposit = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const created = await tx.deposit.create({
       data: {
         userId: req.user!.id,

@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
@@ -22,7 +23,7 @@ supportRouter.get("/tickets", requireAuth, requireEmailVerified, async (req: Aut
 
 supportRouter.post("/tickets", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const input = ticketSchema.parse(req.body);
-  const ticket = await prisma.$transaction(async (tx) => {
+  const ticket = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const created = await tx.supportTicket.create({
       data: {
         userId: req.user!.id,

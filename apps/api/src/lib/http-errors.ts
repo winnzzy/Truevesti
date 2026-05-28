@@ -1,8 +1,16 @@
 import type { Response } from "express";
-import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 import { EmailConfigurationError } from "./email-config.js";
 import { EmailDeliveryError } from "./email-delivery-error.js";
+
+function isPrismaKnownError(err: unknown): err is { code: string; meta?: unknown; message?: string } {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    typeof (err as { code?: unknown }).code === "string"
+  );
+}
 
 export function sendError(res: Response, status: number, error: string, extra?: Record<string, unknown>) {
   return res.status(status).json({ error, ...extra });
@@ -17,7 +25,7 @@ export function handleRouteError(res: Response, err: unknown) {
     });
   }
 
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+  if (isPrismaKnownError(err) && err.code === "P2002") {
     return sendError(res, 409, "An account with this email already exists", { code: "EMAIL_EXISTS" });
   }
 

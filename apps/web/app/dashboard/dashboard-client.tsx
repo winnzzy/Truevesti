@@ -156,7 +156,6 @@ const emptyData: DashboardData = {
   }
 };
 
-const assets = ["USDC", "USDT", "BTC", "ETH", "SOL", "BNB"];
 const sectionMeta: Array<{ id: Section; label: string; href: string; icon: typeof RectangleGroupIcon }> = [
   { id: "overview", label: "Overview", href: "/dashboard", icon: RectangleGroupIcon },
   { id: "plans", label: "Plans", href: "/dashboard/plans", icon: BriefcaseIcon },
@@ -227,8 +226,9 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
   const [session, setSession] = useState<AuthSession | null>(() => readSession());
   const [data, setData] = useState<DashboardData>(emptyData);
   const [selectedPlanId, setSelectedPlanId] = useState("");
-  const [investmentAmount, setInvestmentAmount] = useState("1000");
-  const [investmentAsset, setInvestmentAsset] = useState("USDC");
+  const [investmentAmount, setInvestmentAmount] = useState("");
+  const [investmentAsset, setInvestmentAsset] = useState("");
+  const [investmentAmountError, setInvestmentAmountError] = useState("");
   const [depositOptionKey, setDepositOptionKey] = useState("");
   const [depositAmount, setDepositAmount] = useState("500");
   const [depositTxHash, setDepositTxHash] = useState("");
@@ -273,7 +273,12 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
         tickets: support.tickets,
         balance: investments.balance
       });
-      setSelectedPlanId((current) => current || plans.plans[0]?.id || "");
+      const firstPlan = plans.plans[0];
+      setSelectedPlanId((current) => current || firstPlan?.id || "");
+      setInvestmentAsset((current) => {
+        if (current && firstPlan?.supportedAssets.includes(current)) return current;
+        return firstPlan?.supportedAssets[0] || "USDC";
+      });
       setDepositOptionKey((current) => current || depositOptions.options.find((option) => option.wallet)?.label || depositOptions.options[0]?.label || "");
       setWithdrawalOptionKey((current) => current || depositOptions.options.find((option) => option.wallet)?.label || depositOptions.options[0]?.label || "");
     } catch (err) {
@@ -342,10 +347,39 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
     }
   }
 
+  function getSelectedPlan(): Plan | undefined {
+    return data.plans.find((p) => p.id === selectedPlanId);
+  }
+
+  function validateInvestmentAmount(amount: string, plan: Plan | undefined): string {
+    if (!amount || Number(amount) <= 0) return "";
+    if (!plan) return "";
+    const num = Number(amount);
+    const min = Number(plan.minDepositUsd);
+    const max = Number(plan.maxDepositUsd);
+    if (num < min) return `Minimum investment for ${plan.name} is ${money(min)}`;
+    if (num > max) return `Maximum investment for ${plan.name} is ${money(max)}`;
+    const available = Number(data.balance.availableUsd);
+    if (available <= 0) return "You have no approved balance. Please make a deposit first.";
+    if (num > available) return `Insufficient balance. Your available balance is ${money(available)}.`;
+    return "";
+  }
+
   async function createInvestment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("");
     setError("");
+    setInvestmentAmountError("");
+    const plan = getSelectedPlan();
+    const amountError = validateInvestmentAmount(investmentAmount, plan);
+    if (amountError) {
+      setInvestmentAmountError(amountError);
+      return;
+    }
+    if (!plan) {
+      setError("Please select a valid plan.");
+      return;
+    }
     try {
       await apiRequest("/investments", {
         method: "POST",
@@ -541,39 +575,84 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
             </div>
           ) : null}
 
-          {currentSection === "plans" ? (
-            <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
-              <div className="grid gap-4 md:grid-cols-2">
-                {data.plans.map((plan) => (
-                  <Card className="grid gap-4" key={plan.id}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h2 className="text-lg font-semibold text-white">{plan.name}</h2>
-                        <p className="mt-1 text-sm text-slate-400">{plan.durationDays} days · {plan.riskLevel} risk</p>
+          {currentSection === "plans" ? (() => {
+            const selectedPlan = getSelectedPlan();
+            const availableBalance = Number(data.balance.availableUsd);
+            return (
+              <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
+                <div className="grid gap-4 md:grid-cols-2">
+                  {data.plans.length ? data.plans.map((plan) => (
+                    <Card className={`grid gap-4 cursor-pointer transition ${selectedPlanId === plan.id ? "ring-2 ring-mint" : ""}`} key={plan.id} onClick={() => {
+                      setSelectedPlanId(plan.id);
+                      setInvestmentAsset(plan.supportedAssets[0] || "USDC");
+                      setInvestmentAmount("");
+                      setInvestmentAmountError("");
+                    }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h2 className="text-lg font-semibold text-white">{plan.name}</h2>
+                          <p className="mt-1 text-sm text-slate-400">{plan.durationDays} days · {plan.riskLevel} risk</p>
+                        </div>
+                        <StatusPill status="Estimate" />
                       </div>
-                      <StatusPill status="Estimate" />
+                      <p className="text-sm text-slate-300">Estimated range: {(Number(plan.estimatedYieldMin) * 100).toFixed(0)}%-{(Number(plan.estimatedYieldMax) * 100).toFixed(0)}%. Results can vary and principal is exposed to market risk.</p>
+                      <div className="grid gap-2 text-sm text-slate-300">
+                        <p>Limits: {money(plan.minDepositUsd)} to {money(plan.maxDepositUsd)}</p>
+                        <p>Assets: {plan.supportedAssets.join(", ")}</p>
+                        <p>Allocation: {plan.assetAllocation}</p>
+                      </div>
+                    </Card>
+                  )) : (
+                    <Card className="text-sm text-slate-400">No investment plans are currently available. Please check back later.</Card>
+                  )}
+                </div>
+                <Card>
+                  <h2 className="text-lg font-semibold text-white">Start investment</h2>
+                  {availableBalance <= 0 ? (
+                    <div className="mt-4 rounded-md border border-gold/30 bg-gold/10 p-4 text-sm text-gold">
+                      <p className="font-semibold">No approved balance</p>
+                      <p className="mt-1 text-slate-300">You need to make a deposit and have it approved before you can start investing. Visit the <Link className="underline text-white" href="/dashboard/deposits">Deposits</Link> section to submit a deposit request.</p>
                     </div>
-                    <p className="text-sm text-slate-300">Estimated range: {(Number(plan.estimatedYieldMin) * 100).toFixed(0)}%-{(Number(plan.estimatedYieldMax) * 100).toFixed(0)}%. Results can vary and principal is exposed to market risk.</p>
-                    <div className="grid gap-2 text-sm text-slate-300">
-                      <p>Limits: {money(plan.minDepositUsd)} to {money(plan.maxDepositUsd)}</p>
-                      <p>Assets: {plan.supportedAssets.join(", ")}</p>
-                      <p>Allocation: {plan.assetAllocation}</p>
-                    </div>
-                  </Card>
-                ))}
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-400">Available balance: <span className="font-semibold text-white">{money(availableBalance)}</span></p>
+                  )}
+                  <form className="mt-4 grid gap-3" onSubmit={createInvestment}>
+                    <FieldLabel>Plan<select className={inputClass()} onChange={(event) => {
+                      setSelectedPlanId(event.target.value);
+                      const plan = data.plans.find((p) => p.id === event.target.value);
+                      if (plan) setInvestmentAsset(plan.supportedAssets[0] || "USDC");
+                      setInvestmentAmount("");
+                      setInvestmentAmountError("");
+                    }} value={selectedPlanId}>{data.plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></FieldLabel>
+                    <FieldLabel>
+                      Amount USD
+                      <input
+                        className={inputClass()}
+                        max={selectedPlan ? Number(selectedPlan.maxDepositUsd) : undefined}
+                        min={selectedPlan ? Number(selectedPlan.minDepositUsd) : undefined}
+                        onChange={(event) => {
+                          setInvestmentAmount(event.target.value);
+                          setInvestmentAmountError(validateInvestmentAmount(event.target.value, selectedPlan));
+                        }}
+                        placeholder={selectedPlan ? `Min ${money(selectedPlan.minDepositUsd)} – Max ${money(selectedPlan.maxDepositUsd)}` : "Select a plan first"}
+                        type="number"
+                        value={investmentAmount}
+                      />
+                      {investmentAmountError ? <span className="text-xs text-red-300">{investmentAmountError}</span> : null}
+                    </FieldLabel>
+                    <FieldLabel>
+                      Asset
+                      <select className={inputClass()} onChange={(event) => setInvestmentAsset(event.target.value)} value={investmentAsset}>
+                        {selectedPlan ? selectedPlan.supportedAssets.map((asset) => <option key={asset} value={asset}>{asset}</option>) : <option>Select a plan first</option>}
+                      </select>
+                    </FieldLabel>
+                    <p className="text-xs leading-5 text-slate-400">By starting, you confirm you understand estimated accruals are not guaranteed and may differ from actual results.</p>
+                    <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink disabled:opacity-50" disabled={availableBalance <= 0 || !investmentAmount || !!investmentAmountError}>Start investment</button>
+                  </form>
+                </Card>
               </div>
-              <Card>
-                <h2 className="text-lg font-semibold text-white">Start investment</h2>
-                <form className="mt-4 grid gap-3" onSubmit={createInvestment}>
-                  <FieldLabel>Plan<select className={inputClass()} onChange={(event) => setSelectedPlanId(event.target.value)} value={selectedPlanId}>{data.plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></FieldLabel>
-                  <FieldLabel>Amount USD<input className={inputClass()} min="1" onChange={(event) => setInvestmentAmount(event.target.value)} type="number" value={investmentAmount} /></FieldLabel>
-                  <FieldLabel>Asset<select className={inputClass()} onChange={(event) => setInvestmentAsset(event.target.value)} value={investmentAsset}>{assets.map((asset) => <option key={asset}>{asset}</option>)}</select></FieldLabel>
-                  <p className="text-xs leading-5 text-slate-400">By starting, you confirm you understand estimated accruals are not guaranteed and may differ from actual results.</p>
-                  <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink">Start investment</button>
-                </form>
-              </Card>
-            </div>
-          ) : null}
+            );
+          })() : null}
 
           {currentSection === "deposits" ? (
             <div className="grid gap-4 xl:grid-cols-[360px_1fr]">

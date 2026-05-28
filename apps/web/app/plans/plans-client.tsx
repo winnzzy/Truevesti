@@ -19,6 +19,14 @@ type Plan = {
   isActive: boolean;
 };
 
+type Balance = {
+  depositedUsd: string;
+  activeInvestmentPrincipalUsd: string;
+  completedReturnUsd: string;
+  lockedWithdrawalUsd: string;
+  availableUsd: string;
+};
+
 function money(value: string | number) {
   return new Intl.NumberFormat("en-US", { currency: "USD", style: "currency", maximumFractionDigits: 0 }).format(Number(value));
 }
@@ -44,7 +52,10 @@ export function PlansClient() {
   const [investAsset, setInvestAsset] = useState("USDC");
   const [investStatus, setInvestStatus] = useState("");
   const [investError, setInvestError] = useState("");
+  const [amountError, setAmountError] = useState("");
   const [investLoading, setInvestLoading] = useState(false);
+  const [balance, setBalance] = useState<Balance | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
   const session = readSession();
 
   useEffect(() => {
@@ -56,11 +67,47 @@ export function PlansClient() {
     return () => { mounted = false; };
   }, []);
 
+  useEffect(() => {
+    if (!session?.accessToken) return;
+    let mounted = true;
+    setBalanceLoading(true);
+    apiRequest<{ investments: []; balance: Balance }>("/investments", {
+      headers: { Authorization: `Bearer ${session.accessToken}` }
+    })
+      .then((data) => { if (mounted) setBalance(data.balance); })
+      .catch(() => { /* ignore */ })
+      .finally(() => { if (mounted) setBalanceLoading(false); });
+    return () => { mounted = false; };
+  }, [session?.accessToken]);
+
+  const availableBalance = balance ? Number(balance.availableUsd) : null;
+  const hasApprovedBalance = availableBalance !== null && availableBalance > 0;
+
+  function validateAmount(amount: string, plan: Plan | null): string {
+    if (!amount || Number(amount) <= 0 || !plan) return "";
+    const num = Number(amount);
+    const min = Number(plan.minDepositUsd);
+    const max = Number(plan.maxDepositUsd);
+    if (num < min) return `Minimum investment for ${plan.name} is ${money(min)}`;
+    if (num > max) return `Maximum investment for ${plan.name} is ${money(max)}`;
+    if (availableBalance !== null && availableBalance <= 0) return "You have no approved balance. Please make a deposit first.";
+    if (availableBalance !== null && num > availableBalance) return `Insufficient balance. Your available balance is ${money(availableBalance)}.`;
+    return "";
+  }
+
   async function handleInvest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!investingPlan || !session) return;
     setInvestStatus("");
     setInvestError("");
+    setAmountError("");
+
+    const err = validateAmount(investAmount, investingPlan);
+    if (err) {
+      setAmountError(err);
+      return;
+    }
+
     setInvestLoading(true);
 
     try {
@@ -78,6 +125,11 @@ export function PlansClient() {
       setInvestStatus(`Successfully started ${investingPlan.name} investment with ${money(investAmount)} in ${investAsset}. Check your dashboard for details.`);
       setInvestingPlan(null);
       setInvestAmount("");
+      setAmountError("");
+      // Refresh balance after investment
+      apiRequest<{ investments: []; balance: Balance }>("/investments", { headers })
+        .then((data) => setBalance(data.balance))
+        .catch(() => {});
     } catch (err) {
       setInvestError(err instanceof Error ? err.message : "Unable to start investment");
     } finally {
@@ -122,12 +174,26 @@ export function PlansClient() {
             </div>
             <button
               className="rounded-md border border-white/20 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10"
-              onClick={() => { setInvestingPlan(null); setInvestError(""); setInvestStatus(""); }}
+              onClick={() => { setInvestingPlan(null); setInvestError(""); setInvestStatus(""); setAmountError(""); }}
               type="button"
             >
               Cancel
             </button>
           </div>
+
+          {balanceLoading ? (
+            <p className="mt-3 text-sm text-slate-400">Loading your balance...</p>
+          ) : availableBalance !== null ? (
+            hasApprovedBalance ? (
+              <p className="mt-3 text-sm text-slate-400">Available balance: <span className="font-semibold text-white">{money(availableBalance)}</span></p>
+            ) : (
+              <div className="mt-3 rounded-md border border-gold/30 bg-gold/10 p-4 text-sm text-gold">
+                <p className="font-semibold">No approved balance</p>
+                <p className="mt-1 text-slate-300">You need to make a deposit and have it approved before you can start investing. Visit the <Link className="underline text-white" href="/dashboard/deposits">Deposits</Link> section to submit a deposit request.</p>
+              </div>
+            )
+          ) : null}
+
           <form className="mt-4 grid gap-3 sm:grid-cols-3" onSubmit={handleInvest}>
             <label className="grid gap-1.5 text-sm font-medium text-slate-300">
               Amount (USD)
@@ -135,8 +201,11 @@ export function PlansClient() {
                 className={inputClass()}
                 max={Number(investingPlan.maxDepositUsd)}
                 min={Number(investingPlan.minDepositUsd)}
-                onChange={(e) => setInvestAmount(e.target.value)}
-                placeholder={`Min ${money(investingPlan.minDepositUsd)}`}
+                onChange={(e) => {
+                  setInvestAmount(e.target.value);
+                  setAmountError(validateAmount(e.target.value, investingPlan));
+                }}
+                placeholder={`Min ${money(investingPlan.minDepositUsd)} – Max ${money(investingPlan.maxDepositUsd)}`}
                 required
                 type="number"
                 value={investAmount}
@@ -151,13 +220,14 @@ export function PlansClient() {
             <div className="flex items-end">
               <button
                 className="focus-ring w-full rounded-md bg-mint px-4 py-2.5 text-sm font-semibold text-ink disabled:opacity-50"
-                disabled={investLoading || !investAmount}
+                disabled={investLoading || !investAmount || !!amountError || (availableBalance !== null && availableBalance <= 0)}
                 type="submit"
               >
                 {investLoading ? "Starting..." : "Start investment"}
               </button>
             </div>
           </form>
+          {amountError ? <p className="mt-2 text-xs text-red-300">{amountError}</p> : null}
           <p className="mt-3 text-xs text-slate-500">
             Range: {money(investingPlan.minDepositUsd)} – {money(investingPlan.maxDepositUsd)} · Duration: {investingPlan.durationDays} days · Returns are estimates and may vary with market conditions.
           </p>
@@ -217,6 +287,7 @@ export function PlansClient() {
                       setInvestAsset(plan.supportedAssets[0] || "USDC");
                       setInvestError("");
                       setInvestStatus("");
+                      setAmountError("");
                     }}
                     type="button"
                   >

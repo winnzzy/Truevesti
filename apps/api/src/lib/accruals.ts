@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import { computeAccrualSnapshot } from "./investment-math.js";
 
@@ -26,7 +27,7 @@ export async function runDailyAccruals(date = new Date()) {
       const existing = await prisma.$queryRaw`
         SELECT id FROM "Accrual" WHERE "investmentId" = ${inv.id} AND "date" = ${day.toISOString().slice(0, 10)}::date LIMIT 1
       `;
-      if ((existing as any[]).length > 0) continue;
+      if ((existing as { id: string }[]).length > 0) continue;
 
       await prisma.$executeRaw`
         INSERT INTO "Accrual" ("investmentId", "amountUsd", "date") VALUES (${inv.id}, ${dailyAccrual.toFixed(2)}, ${day.toISOString().slice(0, 10)}::date)
@@ -34,7 +35,7 @@ export async function runDailyAccruals(date = new Date()) {
       created++;
 
       if (inv.maturesAt <= date) {
-        await prisma.$transaction(async (tx) => {
+        await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
           await tx.investment.update({
             where: { id: inv.id },
             data: { status: "COMPLETED", completedAt: date }

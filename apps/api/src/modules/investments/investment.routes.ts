@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { z } from "zod";
@@ -41,7 +42,7 @@ investmentRouter.get("/:id", requireAuth, requireEmailVerified, async (req: Auth
     return res.status(404).json({ error: "Investment not found" });
   }
   const enriched = enrichInvestment(investment);
-  res.json({ investment: { ...enriched, accruals: (investment as any).accruals } });
+  res.json({ investment: { ...enriched, accruals: (investment as { accruals: unknown[] }).accruals } });
 });
 
 investmentRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
@@ -62,7 +63,7 @@ investmentRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
     return res.status(400).json({ error: "Asset is not supported by this plan" });
   }
 
-  const investment = await prisma.$transaction(async (tx) => {
+  const investment = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const balance = await getUserBalance(req.user!.id, tx);
     if (principalUsd > Number(balance.availableUsd)) {
       throw Object.assign(new Error("Investment amount exceeds available approved balance"), { status: 400 });

@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma.js";
 import { hashSecret, verifySecret } from "./password.js";
 import { sendEmail } from "./email-provider.js";
@@ -66,7 +67,7 @@ export async function verifySignupOtp(email: string, code: string) {
     return { ok: false as const, error: "Invalid verification code" };
   }
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.otpCode.update({ where: { id: otp.id }, data: { consumedAt: new Date() } });
     await tx.user.update({ where: { id: user.id }, data: { emailVerifiedAt: new Date() } });
     await tx.auditLog.create({

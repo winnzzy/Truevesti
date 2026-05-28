@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./prisma.js";
 
 export async function deleteUserByEmail(email: string) {
@@ -8,7 +9,7 @@ export async function deleteUserByEmail(email: string) {
     return { deleted: false as const, email: normalized, message: "No user found for this email" };
   }
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.withdrawal.deleteMany({ where: { userId: user.id } });
     await tx.deposit.deleteMany({ where: { userId: user.id } });
     await tx.investment.deleteMany({ where: { userId: user.id } });

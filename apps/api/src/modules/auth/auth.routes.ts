@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import jwt from "jsonwebtoken";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
@@ -376,7 +377,7 @@ authRouter.post("/password/reset", async (req: Request, res: Response) => {
 
     const passwordHash = await hashPassword(input.newPassword);
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.user.update({
         where: { id: result.userId },
         data: { passwordHash }

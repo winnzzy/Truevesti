@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
@@ -100,7 +101,7 @@ adminRouter.get("/company-wallets", async (_req: Request, res: Response) => {
 
 adminRouter.post("/company-wallets", async (req: AuthRequest, res: Response) => {
   const input = walletAddressSchema.parse(req.body);
-  const wallet = await prisma.$transaction(async (tx) => {
+  const wallet = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const saved = await tx.companyWalletAddress.upsert({
       where: {
         assetSymbol_network: {
@@ -130,7 +131,7 @@ adminRouter.post("/company-wallets", async (req: AuthRequest, res: Response) => 
 
 adminRouter.patch("/company-wallets/:id", async (req: AuthRequest, res: Response) => {
   const input = walletAddressUpdateSchema.parse(req.body);
-  const wallet = await prisma.$transaction(async (tx) => {
+  const wallet = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const saved = await tx.companyWalletAddress.update({
       where: { id: String(req.params.id) },
       data: input
@@ -182,7 +183,7 @@ adminRouter.get("/plans", async (_req: Request, res: Response) => {
 
 adminRouter.post("/plans", async (req: AuthRequest, res: Response) => {
   const input = planSchema.parse(req.body);
-  const plan = await prisma.$transaction(async (tx) => {
+  const plan = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const created = await tx.investmentPlan.create({ data: { ...input, isActive: input.isActive ?? true } });
     await tx.auditLog.create({
       data: {
@@ -200,7 +201,7 @@ adminRouter.post("/plans", async (req: AuthRequest, res: Response) => {
 
 adminRouter.patch("/plans/:id", async (req: AuthRequest, res: Response) => {
   const input = planSchema.partial().parse(req.body);
-  const plan = await prisma.$transaction(async (tx) => {
+  const plan = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.investmentPlan.update({ where: { id: String(req.params.id) }, data: input });
     await tx.auditLog.create({
       data: {
@@ -230,7 +231,7 @@ adminRouter.get("/investments", async (_req: Request, res: Response) => {
 
 adminRouter.patch("/deposits/:id/decision", async (req: AuthRequest, res: Response) => {
   const input = depositDecisionSchema.parse(req.body);
-  const deposit = await prisma.$transaction(async (tx) => {
+  const deposit = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.deposit.update({
       where: { id: String(req.params.id) },
       data: {
@@ -290,7 +291,7 @@ adminRouter.patch("/kyc/:id/decision", async (req: AuthRequest, res: Response) =
     status: z.enum(["VERIFIED", "REJECTED", "PENDING"]),
     reason: z.string().max(1000).optional()
   }).parse(req.body);
-  const check = await prisma.$transaction(async (tx) => {
+  const check = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.kycCheck.update({ where: { id: String(req.params.id) }, data: input });
     await tx.auditLog.create({
       data: {
@@ -328,7 +329,7 @@ adminRouter.patch("/support/tickets/:id", async (req: AuthRequest, res: Response
     status: z.string().min(2).max(40),
     adminResponse: z.string().min(3).max(4000)
   }).parse(req.body);
-  const ticket = await prisma.$transaction(async (tx) => {
+  const ticket = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.supportTicket.update({
       where: { id: String(req.params.id) },
       data: { ...input, respondedAt: new Date() }
@@ -369,7 +370,7 @@ adminRouter.patch("/withdrawals/:id/decision", async (req: AuthRequest, res: Res
     }
   }
 
-  const withdrawal = await prisma.$transaction(async (tx) => {
+  const withdrawal = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.withdrawal.update({
       where: { id: String(req.params.id) },
       data: input.status === "APPROVED"

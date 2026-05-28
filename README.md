@@ -1,192 +1,106 @@
 # Truevesti
 
-Premium crypto investment brokerage scaffold built with Next.js, Express, TypeScript, Prisma, and PostgreSQL. The app is designed for legitimate fintech workflows: verified onboarding, compliance-ready investments, provider-based crypto deposits, withdrawal approvals, audit logs, and risk disclosures.
+A modern crypto investment brokerage platform. Users can register, complete verification, browse investment plans, make crypto deposits, and track their portfolio — all through a polished, responsive interface.
 
-## Architecture
+> **Note:** This is a public showcase repository. Sensitive configuration, production secrets, and wallet infrastructure are excluded. See [Security](#security) below.
 
-- `apps/web`: Next.js App Router UI with TailwindCSS, Framer Motion, dashboards, auth pages, plans, and legal pages.
-- `apps/api`: Express API with JWT auth, OTP/email verification, Prisma models, admin, investments, payments, support, notifications, and security middleware.
-- `apps/api/prisma/schema.prisma`: PostgreSQL data model for users, sessions, plans, deposits, withdrawals, KYC, tickets, notifications, consents, and audit logs.
-- `docker-compose.yml`: local PostgreSQL, API, and web services.
+## Features
 
-## Quick Start
+- **User Authentication** — Signup with email OTP verification, JWT-based sessions, password reset
+- **Investment Plans** — Tiered plans with configurable limits, supported assets, and estimated returns
+- **Crypto Deposits** — Generate deposit addresses, submit transaction proofs, admin-approved balance crediting
+- **Withdrawal Requests** — Users request withdrawals; admins review and approve
+- **Admin Dashboard** — Deposit/withdrawal approval, user management, investment oversight, audit logs
+- **Notifications** — Real-time in-app notification system
+- **Support Tickets** — Built-in customer support workflow
+- **Audit Trail** — Every admin and user action is logged for compliance
+- **Risk Disclosures** — Consent tracking and disclosure acceptance before investments
 
-1. Install dependencies:
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js (App Router), React, TypeScript, TailwindCSS, Framer Motion |
+| Backend | Express.js, TypeScript, Zod validation |
+| Database | PostgreSQL via Prisma ORM |
+| Auth | JWT access/refresh tokens, bcrypt, OTP email verification |
+| Email | Resend / SendGrid / SMTP / Console (configurable) |
+| Crypto | Pluggable provider architecture for deposit address generation |
+| Infra | Docker Compose (local), Vercel (frontend), Render (backend) |
+
+## Screenshots
+
+<!-- Add screenshots here -->
+![Dashboard](docs/screenshots/dashboard.png)
+![Investment Plans](docs/screenshots/plans.png)
+![Deposits](docs/screenshots/deposits.png)
+
+## Quick Start (Local Development)
+
+### Prerequisites
+
+- Node.js 18+
+- Docker (for PostgreSQL)
+- npm
+
+### Setup
 
 ```bash
+# 1. Install dependencies
 npm install
-```
 
-2. Copy environment variables:
-
-```bash
+# 2. Copy environment templates
 cp .env.example .env
-cp apps/web/.env.example apps/web/.env.local
 cp apps/api/.env.example apps/api/.env
-```
+cp apps/web/.env.example apps/web/.env.local
 
-3. Start Postgres:
-
-```bash
+# 3. Start PostgreSQL
 docker compose up -d postgres
-```
 
-4. Migrate the database:
-
-```bash
+# 4. Run database migrations
 npm run prisma:migrate
+
+# 5. Start development servers
+npm run dev --workspace apps/api   # API on http://localhost:4000
+npm run dev --workspace apps/web   # Web on http://localhost:3000
 ```
 
-5. Run the apps:
+For local crypto address testing, set `CRYPTO_PROVIDER=mock` in `apps/api/.env` to generate fake addresses that cannot receive real funds.
+
+## Project Structure
+
+```
+truevesti/
+├── apps/
+│   ├── api/          # Express backend (auth, payments, admin, investments)
+│   │   ├── prisma/   # Database schema & migrations
+│   │   └── src/      # Routes, middleware, libs, crypto providers
+│   └── web/          # Next.js frontend (App Router)
+│       ├── app/      # Pages and layouts
+│       ├── components/  # Reusable UI components
+│       └── lib/      # Client utilities
+├── infra/            # Deployment configs (Render, Vercel)
+├── docs/             # Documentation
+└── wallet-core/      # Trust Wallet Core (vendored dependency)
+```
+
+## Scripts
 
 ```bash
-npm run dev --workspace apps/api
-npm run dev --workspace apps/web
+npm run typecheck          # Type-check all workspaces
+npm run build              # Build all workspaces
+npm test --workspace apps/api   # Run API tests
 ```
 
-Web: `http://localhost:3000`
+## Security
 
-API: `http://localhost:4000`
+- **No secrets in source.** All `.env` files are gitignored. Use `.env.example` templates and your platform's secret manager.
+- **No auto-sweeping.** The backend generates deposit addresses only — it does not move, transfer, or sign transactions.
+- **Admin approval required.** All deposits and withdrawals require explicit admin review.
+- **Compliance ready.** Risk disclosures, consent tracking, and audit logs are built in.
 
-## Crypto Provider Setup
+> **Before deploying to production:** Add a real CAPTCHA provider, KYC/AML service, transaction monitoring, and HTTPS. See `apps/api/.env.example` for the full list of required environment variables.
 
-The API uses a pluggable crypto provider to generate real deposit addresses. The `CRYPTO_PROVIDER` env var selects the provider at startup.
+## License
 
-### Provider Options
-
-| Provider | Description | Production-safe |
-|---|---|---|
-| `trust-wallet-core` | Real BIP44 addresses via Trust Wallet Core WASM bindings | ✅ Yes |
-| `static-wallet` | Pre-configured addresses from `MASTER_WALLET_ADDRESSES` JSON | ✅ Yes (if real addresses) |
-| `mnemonic-wallet` | BIP44 derivation paths only (no real address generation) | ❌ No — dev only |
-| `mock` | Fake addresses for local testing | ❌ No — dev only |
-
-**Production deployments must use `trust-wallet-core` or `static-wallet`.** The API will refuse to start in production with `mock` or `mnemonic-wallet`.
-
-### Local Development (Mock Mode)
-
-For local development without real blockchain addresses, set in `apps/api/.env`:
-
-```env
-CRYPTO_PROVIDER=mock
-```
-
-This generates clearly-marked fake addresses (e.g. `mock-btc-address-not-real-a1b2c3d4`) that cannot receive real funds. **Never use this in production.**
-
-### Trust Wallet Core (Production)
-
-#### 1. Install the npm package
-
-```bash
-npm install @trustwallet/wallet-core --workspace apps/api
-```
-
-#### 2. Set environment variables
-
-In `apps/api/.env`:
-
-```env
-CRYPTO_PROVIDER=trust-wallet-core
-MASTER_WALLET_MNEMONIC=your twelve word bip39 mnemonic phrase goes here word word word word
-```
-
-**Requirements:**
-- `MASTER_WALLET_MNEMONIC` must be a valid 12- or 24-word BIP39 mnemonic.
-- The mnemonic is validated at startup using Trust Wallet Core's `Mnemonic.isValid()`.
-- **Never commit the mnemonic to git.** Use secret managers (Vercel, Railway, Render, AWS SSM).
-
-#### 3. Build Trust Wallet Core WASM bindings (if needed)
-
-If `@trustwallet/wallet-core` ships pre-built WASM, no build step is needed. If you need to build from the local `wallet-core/` source:
-
-```bash
-cd wallet-core/wasm
-npm install
-npm run build
-```
-
-Verify that `dist/lib/wallet-core.wasm` exists in the package output.
-
-#### 4. Supported coins
-
-| Asset | Network | Coin Type |
-|---|---|---|
-| BTC | Bitcoin | `bitcoin` (0) |
-| ETH | Ethereum | `ethereum` (60) |
-| USDT (ERC20) | Ethereum | `ethereum` (60) |
-| USDT (TRC20) | Tron | `tron` (195) |
-
-#### 5. Verify setup
-
-Start the API and check for:
-
-```
-[crypto-provider] Startup validation passed. Provider=trust-wallet-core, NODE_ENV=development
-[crypto-provider] Using provider: trust-wallet-core
-```
-
-Then call `GET /api/payments/deposit-options` to confirm real addresses are returned.
-
-### Static Wallet Provider
-
-If you already have deposit addresses, set them as a JSON map:
-
-```env
-CRYPTO_PROVIDER=static-wallet
-MASTER_WALLET_ADDRESSES={"BTC:BTC":"bc1q...","ETH:ETH":"0x...","ETH:USDT_ERC20":"0x...","TRX:USDT_TRC20":"T..."}
-```
-
-### Optional: Derivation Account Index
-
-```env
-# Default: 0 — change if you need multiple derived accounts
-WALLET_DERIVATION_ACCOUNT=0
-```
-
-## Testing the Full Flow
-
-### Signup → Plan Selection → Deposit Address → Manual Deposit
-
-1. **Sign up** at `/auth/signup` and verify your email (OTP is logged to console in dev mode).
-2. **Log in** at `/auth/login`.
-3. **Navigate to Plans** (`/dashboard/plans`) — click a plan card to select it. The form on the right shows plan details, limits, and your available balance.
-4. **Navigate to Deposits** (`/dashboard/deposits`):
-   - Select a coin/network from the dropdown (e.g. "USDT TRC20").
-   - A real deposit address is displayed (from admin-configured wallets or the crypto provider).
-   - Copy the address and send funds from your wallet.
-   - Paste the transaction hash and submit.
-5. **Admin approves** the deposit via the admin panel — your balance updates.
-6. **Return to Plans** — now you can invest with your approved balance.
-7. The frontend validates plan limits and available balance before submission. Clear error messages are shown if:
-   - You have no approved balance ("You have no approved balance. Please make a deposit first.")
-   - Amount exceeds limits ("Minimum/Maximum investment for X is $Y")
-   - Amount exceeds available balance ("Insufficient balance")
-
-### Running Tests
-
-```bash
-# Typecheck the full project
-npm run typecheck
-
-# Build all workspaces
-npm run build
-
-# Run API tests
-npm test --workspace apps/api
-```
-
-## Security And Compliance Notes
-
-- No guaranteed profits are presented. Yield fields are modeled as estimates and every investment requires risk consent.
-- Wallet creation is provider-adapter based. Production deployments must use `trust-wallet-core` or `static-wallet` with real addresses.
-- `CRYPTO_PROVIDER=mock` and `CRYPTO_PROVIDER=mnemonic-wallet` are blocked in production (`NODE_ENV=production`).
-- Add a real CAPTCHA verifier, KYC provider, email provider, and transaction monitoring provider before production.
-- Store secrets in Vercel/Railway/Render/AWS secret managers, not in git.
-- Run HTTPS behind the deployment platform or reverse proxy and keep `trust proxy` configured for secure cookies.
-- The mnemonic, private keys, and seed phrases are never logged. Debug logs include only provider names, asset symbols, networks, and derivation paths.
-
-## Deployment
-
-- Frontend: deploy `apps/web` to Vercel with `NEXT_PUBLIC_API_URL`.
-- Backend: deploy `apps/api` to Railway, Render, ECS, or Fly.io with PostgreSQL and the environment variables from `apps/api/.env.example`.
-- Database: managed PostgreSQL with daily backups, PITR, and restricted network access.
+Proprietary — all rights reserved.

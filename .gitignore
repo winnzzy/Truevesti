@@ -3,8 +3,34 @@ node_modules
 dist
 **/dist
 *.tsbuildinfo
+
+# Environment files — never commit real secrets
 .env
 .env.local
-coverage
+.env.production
+.env.staging
+.env.test
+.env.*.local
+
+# Logs
 *.log
+*.err.log
+
+# Coverage
+coverage
+
+# Build artifacts
+*.tsbuildinfo
+
+# Prisma migrations (generated, not hand-written)
 apps/api/prisma/migrations
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build output logs
+build_output.txt
+build_stderr.txt
+build_stdout.txt
+build_errors.txt

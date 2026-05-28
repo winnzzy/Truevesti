@@ -52,11 +52,12 @@ paymentRouter.get("/balance", requireAuth, requireEmailVerified, async (req: Aut
 });
 
 paymentRouter.get("/deposit-options", requireAuth, requireEmailVerified, async (_req: AuthRequest, res: Response) => {
-  const wallets = await prisma.companyWalletAddress.findMany({
+  const rawWallets = await prisma.companyWalletAddress.findMany({
     where: { isActive: true },
     orderBy: [{ assetSymbol: "asc" }, { network: "asc" }]
   });
-  const configured = new Map(wallets.map((wallet: DepositWalletOption) => [`${wallet.assetSymbol}:${wallet.network}`, wallet]));
+  const wallets: DepositWalletOption[] = rawWallets as DepositWalletOption[];
+  const configured = new Map<string, DepositWalletOption>(wallets.map((wallet: DepositWalletOption) => [`${wallet.assetSymbol}:${wallet.network}`, wallet]));
 
   const options = await Promise.all(supportedManualDepositOptions.map(async (option) => {
     const wallet = configured.get(`${option.assetSymbol}:${option.network}`);

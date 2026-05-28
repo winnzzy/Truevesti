@@ -32,7 +32,8 @@ const schema = z.object({
   MASTER_WALLET_MNEMONIC: z.string().optional(),
   WALLET_DERIVATION_ACCOUNT: z.coerce.number().int().nonnegative().default(0),
   ENCRYPTION_KEY: z.string().optional(),
-  ADMIN_PURGE_SECRET: z.string().optional()
+  ADMIN_PURGE_SECRET: z.string().optional(),
+  CAPTCHA_SECRET: z.string().optional()
 });
 
 export const env = schema.parse(process.env);

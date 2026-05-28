@@ -16,13 +16,16 @@ export interface CryptoProvider {
 
 // ── Startup validation ─────────────────────────────────────────────
 function validateStartup(): void {
-  if (env.CRYPTO_PROVIDER === "mock" && env.NODE_ENV === "production") {
+  // ── Block non-production-safe providers in production ─────────────
+  const devOnlyProviders = ["mock", "mnemonic-wallet"];
+  if (devOnlyProviders.includes(env.CRYPTO_PROVIDER) && env.NODE_ENV === "production") {
     throw new Error(
-      "FATAL: CRYPTO_PROVIDER=mock is not allowed in production. " +
-        "Set CRYPTO_PROVIDER=trust-wallet-core (or another real provider) before starting.",
+      `FATAL: CRYPTO_PROVIDER=${env.CRYPTO_PROVIDER} is not allowed in production. ` +
+        "Set CRYPTO_PROVIDER=trust-wallet-core (or static-wallet with real addresses).",
     );
   }
 
+  // ── Require mnemonic when using trust-wallet-core ────────────────
   if (env.CRYPTO_PROVIDER === "trust-wallet-core") {
     if (
       !env.MASTER_WALLET_MNEMONIC ||
@@ -34,6 +37,9 @@ function validateStartup(): void {
       );
     }
   }
+
+  // ── Log provider resolution (no secrets) ─────────────────────────
+  console.log(`[crypto-provider] Startup validation passed. Provider=${env.CRYPTO_PROVIDER}, NODE_ENV=${env.NODE_ENV}`);
 }
 
 // Validate at module load time

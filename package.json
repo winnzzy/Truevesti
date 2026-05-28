@@ -28,7 +28,7 @@
     "@types/bcrypt": "latest",
     "@types/cookie-parser": "latest",
     "@types/cors": "latest",
-    "@types/express": "latest",
+    "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "latest",
     "@types/node": "latest",
     "@types/nodemailer": "latest",

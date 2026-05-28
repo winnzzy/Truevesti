@@ -34,14 +34,14 @@ investmentRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthReq
 
 investmentRouter.get("/:id", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const investment = await prisma.investment.findFirst({
-    where: { id: req.params.id, userId: req.user!.id },
+    where: { id: String(req.params.id), userId: req.user!.id },
     include: { plan: true, accruals: { orderBy: { date: "desc" }, take: 90 } }
   });
   if (!investment) {
     return res.status(404).json({ error: "Investment not found" });
   }
   const enriched = enrichInvestment(investment);
-  res.json({ investment: { ...enriched, accruals: investment.accruals } });
+  res.json({ investment: { ...enriched, accruals: (investment as any).accruals } });
 });
 
 investmentRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {

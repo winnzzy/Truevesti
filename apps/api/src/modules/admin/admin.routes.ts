@@ -132,7 +132,7 @@ adminRouter.patch("/company-wallets/:id", async (req: AuthRequest, res: Response
   const input = walletAddressUpdateSchema.parse(req.body);
   const wallet = await prisma.$transaction(async (tx) => {
     const saved = await tx.companyWalletAddress.update({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       data: input
     });
     await tx.auditLog.create({
@@ -201,7 +201,7 @@ adminRouter.post("/plans", async (req: AuthRequest, res: Response) => {
 adminRouter.patch("/plans/:id", async (req: AuthRequest, res: Response) => {
   const input = planSchema.partial().parse(req.body);
   const plan = await prisma.$transaction(async (tx) => {
-    const updated = await tx.investmentPlan.update({ where: { id: req.params.id }, data: input });
+    const updated = await tx.investmentPlan.update({ where: { id: String(req.params.id) }, data: input });
     await tx.auditLog.create({
       data: {
         actorId: actorId(req),
@@ -232,7 +232,7 @@ adminRouter.patch("/deposits/:id/decision", async (req: AuthRequest, res: Respon
   const input = depositDecisionSchema.parse(req.body);
   const deposit = await prisma.$transaction(async (tx) => {
     const updated = await tx.deposit.update({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       data: {
         status: input.status,
         txHash: input.status === "CONFIRMED" ? input.txHash : undefined,
@@ -291,7 +291,7 @@ adminRouter.patch("/kyc/:id/decision", async (req: AuthRequest, res: Response) =
     reason: z.string().max(1000).optional()
   }).parse(req.body);
   const check = await prisma.$transaction(async (tx) => {
-    const updated = await tx.kycCheck.update({ where: { id: req.params.id }, data: input });
+    const updated = await tx.kycCheck.update({ where: { id: String(req.params.id) }, data: input });
     await tx.auditLog.create({
       data: {
         actorId: actorId(req),
@@ -330,7 +330,7 @@ adminRouter.patch("/support/tickets/:id", async (req: AuthRequest, res: Response
   }).parse(req.body);
   const ticket = await prisma.$transaction(async (tx) => {
     const updated = await tx.supportTicket.update({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       data: { ...input, respondedAt: new Date() }
     });
     await tx.auditLog.create({
@@ -361,7 +361,7 @@ adminRouter.patch("/withdrawals/:id/decision", async (req: AuthRequest, res: Res
     z.object({ status: z.literal("PAID"), txHash: z.string().min(8), adminNote: z.string().max(1000).optional() })
   ]).parse(req.body);
 
-  const existing = await prisma.withdrawal.findUniqueOrThrow({ where: { id: req.params.id } });
+  const existing = await prisma.withdrawal.findUniqueOrThrow({ where: { id: String(req.params.id) } });
   if (input.status === "APPROVED") {
     const balance = await getUserBalance(existing.userId);
     if (Number(existing.amountUsd) > Number(balance.availableUsd)) {
@@ -371,7 +371,7 @@ adminRouter.patch("/withdrawals/:id/decision", async (req: AuthRequest, res: Res
 
   const withdrawal = await prisma.$transaction(async (tx) => {
     const updated = await tx.withdrawal.update({
-      where: { id: req.params.id },
+      where: { id: String(req.params.id) },
       data: input.status === "APPROVED"
         ? { status: "APPROVED", approvedById: actorId(req), approvedAt: new Date(), adminNote: input.adminNote, processedAt: new Date() }
         : input.status === "REJECTED"

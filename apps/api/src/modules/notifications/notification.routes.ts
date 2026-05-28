@@ -16,7 +16,7 @@ notificationRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthR
 
 notificationRouter.patch("/:id/read", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const notification = await prisma.notification.findFirst({
-    where: { id: req.params.id, userId: req.user!.id }
+    where: { id: String(req.params.id), userId: req.user!.id }
   });
   if (!notification) {
     return res.status(404).json({ error: "Notification not found" });

@@ -3,24 +3,36 @@ import type { CorsOptions } from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import type { Express } from "express";
-import { env } from "../lib/env.js";
 
 export function applySecurity(app: Express) {
   app.set("trust proxy", 1);
   app.use(helmet());
 
-  const allowedOrigins = (process.env.WEB_ORIGIN || "https://truevesti-web.vercel.app")
-    .split(",")
+  // Collect allowed origins from multiple env vars (comma-separated values supported).
+  const envKeys = ["CORS_ORIGIN", "CORS_ORIGINS", "ALLOWED_ORIGINS", "FRONTEND_URL", "WEB_ORIGIN"];
+  const allowedOrigins = envKeys
+    .flatMap((key) => (process.env[key] || "").split(","))
     .map((origin: string) => origin.trim())
     .filter(Boolean);
 
+  // Deduplicate
+  const uniqueOrigins = [...new Set(allowedOrigins)];
+
+  console.log("[CORS] Allowed origins:", uniqueOrigins);
+
   const corsOptions: CorsOptions = {
     origin(origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
-      if (!origin || allowedOrigins.some((allowed: string) => origin === allowed || origin.endsWith(".vercel.app"))) {
-        callback(null, true);
-      } else {
-        callback(new Error("CORS origin not allowed"));
+      // Allow requests with no origin (e.g. server-to-server, curl, mobile apps)
+      if (!origin) {
+        return callback(null, true);
       }
+
+      if (uniqueOrigins.some((allowed: string) => origin === allowed || origin.endsWith(".vercel.app"))) {
+        return callback(null, true);
+      }
+
+      console.warn("[CORS] Blocked origin:", origin);
+      callback(new Error("CORS origin not allowed"));
     },
     credentials: true
   };

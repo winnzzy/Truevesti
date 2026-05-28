@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { getUserBalance } from "../../lib/balances.js";
+import { getWalletProvider } from "../../lib/crypto-provider.js";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
@@ -18,14 +19,22 @@ withdrawalRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthReq
 
 withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const input = z.object({
-    assetSymbol: z.enum(["BTC", "ETH", "USDT"]),
-    network: z.string().min(2),
-    destination: z.string().min(16),
-    amountUsd: z.number().positive()
+    assetSymbol: z.enum(["BTC", "ETH", "USDT", "USDC", "BNB", "SOL"]),
+    network: z.string().min(2).transform((s: string) => s.toUpperCase()),
+    destination: z.string().min(8).max(240),
+    amountUsd: z.number().positive().max(100_000)
   }).parse(req.body);
 
+  // Validate destination address with the crypto provider
+  const provider = getWalletProvider();
+  const isValidAddress = await provider.validateAddress(input.destination, input.assetSymbol, input.network);
+  if (!isValidAddress) {
+    return res.status(400).json({ error: "Invalid destination address for the selected asset and network" });
+  }
+
+  // Check user has sufficient available balance
   const balance = await getUserBalance(req.user!.id);
-  if (Number(input.amountUsd) > Number(balance.availableUsd)) {
+  if (input.amountUsd > Number(balance.availableUsd)) {
     return res.status(400).json({ error: "Withdrawal amount exceeds available balance" });
   }
 
@@ -45,6 +54,12 @@ withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
         action: "WITHDRAWAL_REQUESTED",
         entity: "Withdrawal",
         entityId: created.id,
+        metadata: {
+          assetSymbol: input.assetSymbol,
+          network: input.network,
+          amountUsd: input.amountUsd,
+          provider: provider.name
+        },
         ipAddress: req.ip
       }
     });

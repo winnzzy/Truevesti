@@ -1,8 +1,12 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 RUN apk add --no-cache openssl
+
+# Copy root package files and all workspace package.json files
 COPY package*.json ./
 COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+
 RUN npm install
 
 FROM node:20-alpine AS builder

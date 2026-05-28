@@ -663,13 +663,48 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
 
           {currentSection === "notifications" ? (
             <Card>
-              <h2 className="text-lg font-semibold text-white">Notifications</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold text-white">Notifications</h2>
+                {data.notifications.some((n) => !n.readAt) ? (
+                  <button
+                    className="focus-ring rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-slate-300 hover:bg-white/10 hover:text-white"
+                    onClick={async () => {
+                      try {
+                        await apiRequest("/notifications/read-all", { method: "POST", headers });
+                        await load();
+                      } catch {}
+                    }}
+                    type="button"
+                  >
+                    Mark all read
+                  </button>
+                ) : null}
+              </div>
               <div className="mt-4 divide-y divide-white/10">
                 {data.notifications.length ? data.notifications.map((item) => (
-                  <article className="py-4" key={item.id}>
+                  <article className={`py-4 ${!item.readAt ? "rounded-md bg-white/5 -mx-3 px-3" : ""}`} key={item.id}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <h3 className="font-semibold text-white">{item.title}</h3>
-                      <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{date(item.createdAt)}</p>
+                      <div className="flex items-center gap-2">
+                        {!item.readAt && <span className="inline-block h-2 w-2 rounded-full bg-mint" />}
+                        <h3 className="font-semibold text-white">{item.title}</h3>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{date(item.createdAt)}</p>
+                        {!item.readAt ? (
+                          <button
+                            className="focus-ring rounded-md border border-white/10 px-2 py-1 text-xs text-slate-400 hover:bg-white/10 hover:text-white"
+                            onClick={async () => {
+                              try {
+                                await apiRequest(`/notifications/${item.id}/read`, { method: "PATCH", headers });
+                                await load();
+                              } catch {}
+                            }}
+                            type="button"
+                          >
+                            Mark read
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                     <p className="mt-2 text-sm text-slate-300">{item.body}</p>
                   </article>

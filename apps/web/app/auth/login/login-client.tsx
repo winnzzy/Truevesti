@@ -84,9 +84,14 @@ export function LoginClient() {
             value={password}
           />
         </label>
-        <button className="focus-ring w-full rounded-md bg-mint px-4 py-3 font-semibold text-ink" disabled={isSubmitting} type="submit">
-          {isSubmitting ? "Signing in..." : "Sign in"}
-        </button>
+        <div className="flex items-center justify-between">
+          <button className="focus-ring w-full rounded-md bg-mint px-4 py-3 font-semibold text-ink" disabled={isSubmitting} type="submit">
+            {isSubmitting ? "Signing in..." : "Sign in"}
+          </button>
+        </div>
+        <p className="text-right text-sm">
+          <AuthLink href="/auth/forgot-password">Forgot password?</AuthLink>
+        </p>
         {status ? <p className="rounded-md bg-mint/10 p-3 text-sm text-mint">{status}</p> : null}
         {error ? (
           <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-200">

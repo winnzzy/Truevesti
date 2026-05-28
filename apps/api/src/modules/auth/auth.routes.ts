@@ -6,7 +6,7 @@ import { prisma } from "../../lib/prisma.js";
 import { sendEmail } from "../../lib/email-provider.js";
 import { signAccessToken, signRefreshToken } from "../../lib/tokens.js";
 import { hashPassword, verifyPassword, hashSecret, verifySecret } from "../../lib/password.js";
-import { createAndSendSignupOtp, verifySignupOtp, SIGNUP_OTP_PURPOSE } from "../../lib/otp.js";
+import { createAndSendSignupOtp, verifySignupOtp, SIGNUP_OTP_PURPOSE, createAndSendPasswordResetOtp, verifyPasswordResetOtp, PASSWORD_RESET_OTP_PURPOSE } from "../../lib/otp.js";
 import { handleRouteError, sendError } from "../../lib/http-errors.js";
 import { requireAuth, type AuthRequest } from "../../middleware/auth.js";
 import { otpRateLimiter } from "../../middleware/otp-rate-limit.js";
@@ -318,19 +318,92 @@ authRouter.post("/logout", async (req, res) => {
   }
 });
 
-authRouter.post("/password/forgot", async (req, res) => {
+authRouter.post("/password/forgot", otpRateLimiter, async (req, res) => {
   try {
     const input = emailSchema.parse(req.body);
-    const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
-    if (user) {
-      await sendEmail({
-        to: user.email,
-        subject: "Reset your Truevesti password",
-        html: "<p>Password reset is not yet enabled. Contact support if you need help.</p>"
+    const email = input.email.toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    if (user && user.emailVerifiedAt) {
+      await prisma.otpCode.updateMany({
+        where: { userId: user.id, purpose: PASSWORD_RESET_OTP_PURPOSE, consumedAt: null },
+        data: { consumedAt: new Date() }
       });
+
+      await createAndSendPasswordResetOtp(user.id, user.email, env.OTP_EXPIRY_MINUTES);
     }
+
     return res.json({
-      message: "If an account exists for this email, password reset instructions have been sent."
+      message: "If an account exists for this email, a password reset code has been sent."
+    });
+  } catch (err) {
+    return handleRouteError(res, err);
+  }
+});
+
+const resetPasswordSchema = z.object({
+  email: z.string().email("Enter a valid email address"),
+  code: z.string().regex(/^\d{6}$/, "Enter the 6-digit reset code"),
+  newPassword: passwordSchema
+});
+
+authRouter.post("/password/reset/verify", async (req, res) => {
+  try {
+    const input = verifyOtpSchema.parse(req.body);
+    const result = await verifyPasswordResetOtp(input.email, input.code);
+
+    if (!result.ok) {
+      return sendError(res, 400, result.error, { code: "INVALID_OTP" });
+    }
+
+    return res.json({
+      message: "Reset code verified. You can now set a new password.",
+      verified: true
+    });
+  } catch (err) {
+    return handleRouteError(res, err);
+  }
+});
+
+authRouter.post("/password/reset", async (req, res) => {
+  try {
+    const input = resetPasswordSchema.parse(req.body);
+    const result = await verifyPasswordResetOtp(input.email, input.code);
+
+    if (!result.ok) {
+      return sendError(res, 400, result.error, { code: "INVALID_OTP" });
+    }
+
+    const passwordHash = await hashPassword(input.newPassword);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: result.userId },
+        data: { passwordHash }
+      });
+      await tx.session.updateMany({
+        where: { userId: result.userId, revokedAt: null },
+        data: { revokedAt: new Date() }
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: result.userId,
+          action: "PASSWORD_RESET",
+          entity: "User",
+          entityId: result.userId
+        }
+      });
+      await tx.notification.create({
+        data: {
+          userId: result.userId,
+          title: "Password changed",
+          body: "Your password was successfully reset. If you did not perform this action, contact support immediately."
+        }
+      });
+    });
+
+    return res.json({
+      message: "Password reset successfully. You can now sign in with your new password."
     });
   } catch (err) {
     return handleRouteError(res, err);

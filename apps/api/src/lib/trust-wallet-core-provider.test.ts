@@ -9,6 +9,7 @@
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { env } from "./env.js";
 import {
   TrustWalletCoreProvider,
   WalletCoreUnavailableError,
@@ -22,26 +23,18 @@ const TEST_MNEMONIC =
 describe("TrustWalletCoreProvider", () => {
   const provider = new TrustWalletCoreProvider();
   let savedMnemonic: string | undefined;
-  let savedAccount: string | undefined;
+  let savedAccount: number;
 
   beforeEach(() => {
-    savedMnemonic = process.env.MASTER_WALLET_MNEMONIC;
-    savedAccount = process.env.WALLET_DERIVATION_ACCOUNT;
-    process.env.MASTER_WALLET_MNEMONIC = TEST_MNEMONIC;
-    process.env.WALLET_DERIVATION_ACCOUNT = "0";
+    savedMnemonic = env.MASTER_WALLET_MNEMONIC;
+    savedAccount = env.WALLET_DERIVATION_ACCOUNT;
+    env.MASTER_WALLET_MNEMONIC = TEST_MNEMONIC;
+    env.WALLET_DERIVATION_ACCOUNT = 0;
   });
 
   afterEach(() => {
-    if (savedMnemonic !== undefined) {
-      process.env.MASTER_WALLET_MNEMONIC = savedMnemonic;
-    } else {
-      delete process.env.MASTER_WALLET_MNEMONIC;
-    }
-    if (savedAccount !== undefined) {
-      process.env.WALLET_DERIVATION_ACCOUNT = savedAccount;
-    } else {
-      delete process.env.WALLET_DERIVATION_ACCOUNT;
-    }
+    env.MASTER_WALLET_MNEMONIC = savedMnemonic;
+    env.WALLET_DERIVATION_ACCOUNT = savedAccount;
   });
 
   // ── BTC ─────────────────────────────────────────────────────────────
@@ -134,7 +127,7 @@ describe("TrustWalletCoreProvider", () => {
   // ── Error cases ─────────────────────────────────────────────────────
 
   it("throws when MASTER_WALLET_MNEMONIC is not set", async () => {
-    delete process.env.MASTER_WALLET_MNEMONIC;
+    env.MASTER_WALLET_MNEMONIC = undefined;
 
     await assert.rejects(
       () => provider.generateAddress("ETH", "ETH"),
@@ -149,7 +142,7 @@ describe("TrustWalletCoreProvider", () => {
   });
 
   it("throws when MASTER_WALLET_MNEMONIC is empty", async () => {
-    process.env.MASTER_WALLET_MNEMONIC = "   ";
+    env.MASTER_WALLET_MNEMONIC = "   ";
 
     await assert.rejects(
       () => provider.generateAddress("BTC", "BTC"),
@@ -161,7 +154,7 @@ describe("TrustWalletCoreProvider", () => {
   });
 
   it("throws when mnemonic is invalid (not BIP39)", async () => {
-    process.env.MASTER_WALLET_MNEMONIC = "not a valid mnemonic at all";
+    env.MASTER_WALLET_MNEMONIC = "not a valid mnemonic at all";
 
     await assert.rejects(
       () => provider.generateAddress("ETH", "ETH"),

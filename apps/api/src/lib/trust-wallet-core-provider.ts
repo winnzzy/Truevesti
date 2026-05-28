@@ -13,6 +13,7 @@
  */
 
 import type { CryptoProvider, GeneratedDeposit } from "./crypto-provider.js";
+import { env } from "./env.js";
 
 // ---------------------------------------------------------------------------
 // Minimal type surface for the wallet-core WASM bindings so we don't
@@ -97,7 +98,7 @@ export class TrustWalletCoreProvider implements CryptoProvider {
     asset: string,
   ): Promise<GeneratedDeposit> {
     // ── 1. Resolve mnemonic ────────────────────────────────────────────
-    const mnemonic = process.env.MASTER_WALLET_MNEMONIC;
+    const mnemonic = env.MASTER_WALLET_MNEMONIC;
     if (!mnemonic || mnemonic.trim().length === 0) {
       throw new Error(
         "MASTER_WALLET_MNEMONIC is not set. " +
@@ -183,10 +184,7 @@ export class TrustWalletCoreProvider implements CryptoProvider {
    * The account index comes from WALLET_DERIVATION_ACCOUNT (default 0).
    */
   private buildDerivationPath(coinType: CoinTypeObj): string {
-    const account = parseInt(
-      process.env.WALLET_DERIVATION_ACCOUNT ?? "0",
-      10,
-    );
+    const account = env.WALLET_DERIVATION_ACCOUNT;
     return `m/44'/${coinType.value}'/${account}'/0/0`;
   }
 }

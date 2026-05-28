@@ -232,6 +232,8 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
   const [depositOptionKey, setDepositOptionKey] = useState("");
   const [depositAmount, setDepositAmount] = useState("500");
   const [depositTxHash, setDepositTxHash] = useState("");
+  const [depositProofUrl, setDepositProofUrl] = useState("");
+  const [copiedAddress, setCopiedAddress] = useState(false);
   const [withdrawalAmount, setWithdrawalAmount] = useState("500");
   const [withdrawalOptionKey, setWithdrawalOptionKey] = useState("");
   const [withdrawalDestination, setWithdrawalDestination] = useState("");
@@ -329,18 +331,23 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
         setError("Deposit address is not configured for the selected coin and network.");
         return;
       }
+      const body: Record<string, unknown> = {
+        assetSymbol: option.assetSymbol,
+        network: option.network,
+        amountUsd: Number(depositAmount),
+        txHash: depositTxHash
+      };
+      if (depositProofUrl.trim()) {
+        body.proofUrl = depositProofUrl.trim();
+      }
       await apiRequest<{ deposit: Deposit }>("/payments/deposits/manual", {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          assetSymbol: option.assetSymbol,
-          network: option.network,
-          amountUsd: Number(depositAmount),
-          txHash: depositTxHash
-        })
+        body: JSON.stringify(body)
       });
       setDepositTxHash("");
-      setStatus("Deposit request submitted. Admin approval is required before balance changes.");
+      setDepositProofUrl("");
+      setStatus("Deposit submitted successfully — your deposit is now PENDING admin review. You will be notified once it is confirmed.");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to submit deposit");
@@ -655,45 +662,123 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
           })() : null}
 
           {currentSection === "deposits" ? (
-            <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
+            <div className="grid gap-4 xl:grid-cols-[400px_1fr]">
               <Card>
-                <h2 className="text-lg font-semibold text-white">Manual deposit request</h2>
-                <form className="mt-4 grid gap-3" onSubmit={submitManualDeposit}>
+                <h2 className="text-lg font-semibold text-white">Deposit funds</h2>
+                <form className="mt-4 grid gap-4" onSubmit={submitManualDeposit}>
+                  {/* Step 1: Select asset/network */}
                   <FieldLabel>
-                    Coin / network
-                    <select className={inputClass()} onChange={(event) => setDepositOptionKey(event.target.value)} value={depositOptionKey}>
+                    1. Select coin / network
+                    <select className={inputClass()} onChange={(event) => {
+                      setDepositOptionKey(event.target.value);
+                      setCopiedAddress(false);
+                    }} value={depositOptionKey}>
                       {data.depositOptions.map((option) => <option key={option.label} value={option.label}>{option.label}</option>)}
                     </select>
                   </FieldLabel>
-                  <div className="rounded-md border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
+
+                  {/* Step 2: Show real deposit address with copy button */}
+                  <div className="rounded-md border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">2. Deposit address</p>
                     {selectedDepositOption?.wallet ? (
                       <>
-                        <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Company wallet</p>
-                        <p className="mt-2 break-all font-semibold text-white">{selectedDepositOption.wallet.address}</p>
-                        <p className="mt-3 leading-6 text-slate-300">{selectedDepositOption.wallet.instructions}</p>
+                        <div className="mt-2 flex items-start gap-2">
+                          <code className="flex-1 break-all rounded-md bg-white/5 px-3 py-2 font-mono text-sm font-semibold text-white">{selectedDepositOption.wallet.address}</code>
+                          <button
+                            type="button"
+                            className="focus-ring shrink-0 rounded-md border border-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-300 transition hover:bg-white/10 hover:text-white"
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(selectedDepositOption.wallet!.address);
+                                setCopiedAddress(true);
+                                setTimeout(() => setCopiedAddress(false), 2000);
+                              } catch {
+                                // Fallback for environments without clipboard API
+                                const textarea = document.createElement("textarea");
+                                textarea.value = selectedDepositOption.wallet!.address;
+                                document.body.appendChild(textarea);
+                                textarea.select();
+                                document.execCommand("copy");
+                                document.body.removeChild(textarea);
+                                setCopiedAddress(true);
+                                setTimeout(() => setCopiedAddress(false), 2000);
+                              }
+                            }}
+                          >
+                            {copiedAddress ? "✓ Copied" : "Copy"}
+                          </button>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-400">{selectedDepositOption.wallet.instructions}</p>
                       </>
                     ) : (
-                      <p>This deposit option is not configured yet. Contact support or choose another network.</p>
+                      <p className="mt-2 text-slate-400">This deposit option is not configured yet. Contact support or choose another network.</p>
                     )}
                   </div>
-                  <FieldLabel>Amount USD<input className={inputClass()} min="1" onChange={(event) => setDepositAmount(event.target.value)} type="number" value={depositAmount} /></FieldLabel>
-                  <FieldLabel>Transaction hash<input className={inputClass()} minLength={8} onChange={(event) => setDepositTxHash(event.target.value)} required value={depositTxHash} /></FieldLabel>
-                  <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink" disabled={!selectedDepositOption?.wallet}>Submit for approval</button>
+
+                  {/* Network warning */}
+                  {selectedDepositOption?.wallet ? (
+                    <div className="rounded-md border border-gold/30 bg-gold/10 p-3 text-sm text-gold" role="alert">
+                      <p className="font-semibold">⚠ Network warning</p>
+                      <p className="mt-1 text-xs leading-5 text-gold/80">Send only <span className="font-bold text-gold">{selectedDepositOption.assetSymbol}</span> on the <span className="font-bold text-gold">{selectedDepositOption.network}</span> network. Wrong network deposits may be lost.</p>
+                    </div>
+                  ) : null}
+
+                  {/* Step 3: Amount */}
+                  <FieldLabel>
+                    3. Amount (USD)
+                    <input className={inputClass()} min="1" onChange={(event) => setDepositAmount(event.target.value)} placeholder="e.g. 500" type="number" value={depositAmount} />
+                  </FieldLabel>
+
+                  {/* Step 4: Transaction hash */}
+                  <FieldLabel>
+                    4. Transaction hash
+                    <input className={inputClass()} minLength={8} onChange={(event) => setDepositTxHash(event.target.value)} placeholder="Paste the on-chain tx hash" required value={depositTxHash} />
+                  </FieldLabel>
+
+                  {/* Optional: Proof URL */}
+                  <FieldLabel>
+                    Proof URL <span className="text-xs text-slate-500">(optional)</span>
+                    <input className={inputClass()} onChange={(event) => setDepositProofUrl(event.target.value)} placeholder="Link to block explorer or screenshot" type="url" value={depositProofUrl} />
+                  </FieldLabel>
+
+                  <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50" disabled={!selectedDepositOption?.wallet}>Submit deposit for review</button>
                 </form>
               </Card>
               <Card>
-                <h2 className="mb-2 text-lg font-semibold text-white">Deposit history</h2>
-                <DataTable
-                  columns={["Asset", "Network", "Amount", "Status", "Created"]}
-                  empty="No deposit requests yet."
-                  rows={data.deposits.map((item) => [
-                    item.assetSymbol,
-                    item.network,
-                    money(item.amountUsd),
-                    <StatusPill key={item.id} status={item.status} />,
-                    item.status === "REJECTED" && item.rejectionReason ? item.rejectionReason : date(item.createdAt)
-                  ])}
-                />
+                <h2 className="mb-3 text-lg font-semibold text-white">Deposit history</h2>
+                {/* Mobile-friendly card list for small screens */}
+                <div className="grid gap-3 sm:hidden">
+                  {data.deposits.length ? data.deposits.map((item) => (
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3" key={item.id}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-white">{item.assetSymbol} · {item.network}</span>
+                        <StatusPill status={item.status} />
+                      </div>
+                      <p className="mt-1 text-sm text-slate-300">{money(item.amountUsd)}</p>
+                      {item.txHash ? <p className="mt-1 break-all text-xs text-slate-500">tx: {item.txHash}</p> : null}
+                      {item.status === "REJECTED" && item.rejectionReason ? <p className="mt-1 text-xs text-red-300">Reason: {item.rejectionReason}</p> : null}
+                      {item.status === "PENDING" ? <p className="mt-2 text-xs text-gold">Awaiting admin confirmation</p> : null}
+                      <p className="mt-1 text-xs text-slate-500">{date(item.createdAt)}</p>
+                    </div>
+                  )) : <p className="text-sm text-slate-400">No deposit requests yet.</p>}
+                </div>
+                {/* Desktop table */}
+                <div className="hidden sm:block">
+                  <DataTable
+                    columns={["Asset", "Network", "Amount", "Status", "Created"]}
+                    empty="No deposit requests yet."
+                    rows={data.deposits.map((item) => [
+                      item.assetSymbol,
+                      item.network,
+                      money(item.amountUsd),
+                      <div key={item.id} className="flex flex-col gap-1">
+                        <StatusPill status={item.status} />
+                        {item.status === "PENDING" ? <span className="text-xs text-gold">Awaiting confirmation</span> : null}
+                      </div>,
+                      item.status === "REJECTED" && item.rejectionReason ? item.rejectionReason : date(item.createdAt)
+                    ])}
+                  />
+                </div>
               </Card>
             </div>
           ) : null}

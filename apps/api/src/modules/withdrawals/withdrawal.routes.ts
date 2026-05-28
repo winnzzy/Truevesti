@@ -1,11 +1,52 @@
 import { Router } from "express";
 import { z } from "zod";
 import { getUserBalance } from "../../lib/balances.js";
-import { getWalletProvider } from "../../lib/crypto-provider.js";
+import { cryptoProvider } from "../../lib/crypto-provider.js";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
 export const withdrawalRouter = Router();
+
+/**
+ * Basic address format validation based on asset type.
+ * For production, consider integrating a dedicated address validation library.
+ */
+function validateAddressFormat(destination: string, assetSymbol: string, network: string): boolean {
+  const addr = destination.trim();
+
+  // BTC addresses: 1xxx, 3xxx, bc1xxx
+  if (assetSymbol === "BTC" || network === "BTC" || network === "BITCOIN") {
+    return /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(addr) || /^bc1[a-zA-HJ-NP-Z0-9]{25,90}$/.test(addr);
+  }
+
+  // ETH / ERC20 addresses: 0x + 40 hex chars
+  if (assetSymbol === "ETH" || network === "ETH" || network === "ETHEREUM" || network === "ERC20") {
+    return /^0x[a-fA-F0-9]{40}$/.test(addr);
+  }
+
+  // TRX / TRC20 addresses: T + 33 base58 chars
+  if (network === "TRX" || network === "TRC20") {
+    return /^T[a-zA-Z0-9]{33}$/.test(addr);
+  }
+
+  // SOL addresses: base58, 32-44 chars
+  if (assetSymbol === "SOL" || network === "SOLANA") {
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr);
+  }
+
+  // BNB: 0x address or bech32
+  if (assetSymbol === "BNB" || network === "BSC" || network === "BINANCE") {
+    return /^0x[a-fA-F0-9]{40}$/.test(addr) || /^bnb1[a-zA-Z0-9]{38}$/.test(addr);
+  }
+
+  // USDC on ETH-compatible chains: same as ETH
+  if (assetSymbol === "USDC") {
+    return /^0x[a-fA-F0-9]{40}$/.test(addr);
+  }
+
+  // Fallback: minimum length check
+  return addr.length >= 8 && addr.length <= 240;
+}
 
 withdrawalRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const withdrawals = await prisma.withdrawal.findMany({
@@ -25,9 +66,8 @@ withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
     amountUsd: z.number().positive().max(100_000)
   }).parse(req.body);
 
-  // Validate destination address with the crypto provider
-  const provider = getWalletProvider();
-  const isValidAddress = await provider.validateAddress(input.destination, input.assetSymbol, input.network);
+  // Validate destination address format
+  const isValidAddress = validateAddressFormat(input.destination, input.assetSymbol, input.network);
   if (!isValidAddress) {
     return res.status(400).json({ error: "Invalid destination address for the selected asset and network" });
   }
@@ -58,7 +98,7 @@ withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
           assetSymbol: input.assetSymbol,
           network: input.network,
           amountUsd: input.amountUsd,
-          provider: provider.name
+          provider: cryptoProvider.constructor.name
         },
         ipAddress: req.ip
       }

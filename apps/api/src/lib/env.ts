@@ -26,10 +26,11 @@ const schema = z.object({
   APPLE_CLIENT_ID: z.string().optional(),
   APPLE_CLIENT_SECRET: z.string().optional(),
   CHAIN_WEBHOOK_SECRET: z.string().optional(),
-  CRYPTO_PROVIDER: z.enum(["mock", "static-wallet", "mnemonic-wallet"]).default("mock"),
+  CRYPTO_PROVIDER: z.enum(["mock", "static-wallet", "mnemonic-wallet", "trust-wallet-core"]),
   CRYPTO_PROVIDER_API_KEY: z.string().optional(),
   MASTER_WALLET_ADDRESSES: z.string().optional(),
   MASTER_WALLET_MNEMONIC: z.string().optional(),
+  WALLET_DERIVATION_ACCOUNT: z.coerce.number().int().nonnegative().default(0),
   ENCRYPTION_KEY: z.string().optional(),
   ADMIN_PURGE_SECRET: z.string().optional()
 });

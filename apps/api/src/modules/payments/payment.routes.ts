@@ -1,11 +1,27 @@
 import { Router } from "express";
 import { getUserBalance } from "../../lib/balances.js";
-import { getWalletProvider } from "../../lib/crypto-provider.js";
+import { cryptoProvider } from "../../lib/crypto-provider.js";
 import { manualDepositRequestSchema, supportedManualDepositOptions } from "../../lib/manual-deposits.js";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
 export const paymentRouter = Router();
+
+/**
+ * Map manual-deposit option (assetSymbol + network) to crypto-provider params.
+ * Returns [providerNetwork, providerAsset] used by cryptoProvider.generateAddress().
+ */
+function mapToProviderParams(assetSymbol: string, network: string): [string, string] {
+  // BTC → network=BTC, asset=BTC
+  if (assetSymbol === "BTC") return ["BTC", "BTC"];
+  // ETH → network=ETH, asset=ETH
+  if (assetSymbol === "ETH") return ["ETH", "ETH"];
+  // USDT on ERC20 → network=ETH, asset=USDT_ERC20
+  if (assetSymbol === "USDT" && network === "ERC20") return ["ETH", "USDT_ERC20"];
+  // USDT on TRC20 → network=TRX, asset=USDT_TRC20
+  if (assetSymbol === "USDT" && network === "TRC20") return ["TRX", "USDT_TRC20"];
+  throw new Error(`Unsupported asset/network combination: ${assetSymbol}/${network}`);
+}
 
 paymentRouter.get("/deposits", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
   const deposits = await prisma.deposit.findMany({
@@ -28,7 +44,6 @@ paymentRouter.get("/deposit-options", requireAuth, requireEmailVerified, async (
   });
   const configured = new Map(wallets.map((wallet) => [`${wallet.assetSymbol}:${wallet.network}`, wallet]));
 
-  const provider = getWalletProvider();
   const options = await Promise.all(supportedManualDepositOptions.map(async (option) => {
     const wallet = configured.get(`${option.assetSymbol}:${option.network}`);
     if (wallet) {
@@ -37,21 +52,25 @@ paymentRouter.get("/deposit-options", requireAuth, requireEmailVerified, async (
         wallet: {
           id: wallet.id,
           address: wallet.address,
-          instructions: wallet.instructions
+          instructions: wallet.instructions,
+          provider: "admin-configured"
         }
       };
     }
 
-    // Fall back to crypto-provider (mnemonic/static) for address generation
+    // Fall back to crypto-provider for real address generation
     try {
-      const generated = await provider.getAddress(option.assetSymbol, option.network);
+      const [provNetwork, provAsset] = mapToProviderParams(option.assetSymbol, option.network);
+      const generated = await cryptoProvider.generateAddress(provNetwork, provAsset);
       if (generated) {
         return {
           ...option,
           wallet: {
             id: `provider:${option.assetSymbol}:${option.network}`,
             address: generated.address,
-            instructions: `Send only ${option.assetSymbol} on the ${option.network} network to this address. Sending other assets may result in permanent loss.${generated.derivationPath ? ` (Derived: ${generated.derivationPath})` : ""}`
+            instructions: `Send only ${option.assetSymbol} on the ${option.network} network to this address. Sending other assets may result in permanent loss.`,
+            provider: generated.provider,
+            ...(generated.derivationPath ? { derivationPath: generated.derivationPath } : {})
           }
         };
       }
@@ -79,21 +98,25 @@ paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async 
 
   let depositAddress: string;
   let walletId: string;
-  let provider = "manual-admin";
+  let providerName = "manual-admin";
+  let derivationPath: string | undefined;
 
   if (wallet) {
     depositAddress = wallet.address;
     walletId = wallet.id;
   } else {
-    // Try crypto-provider (mnemonic/static) for address generation
-    const cryptoProvider = getWalletProvider();
-    const generated = await cryptoProvider.getAddress(input.assetSymbol, input.network);
-    if (!generated) {
+    // Use crypto-provider for real address generation
+    try {
+      const [provNetwork, provAsset] = mapToProviderParams(input.assetSymbol, input.network);
+      const generated = await cryptoProvider.generateAddress(provNetwork, provAsset);
+      depositAddress = generated.address;
+      walletId = `provider:${input.assetSymbol}:${input.network}`;
+      providerName = generated.provider;
+      derivationPath = generated.derivationPath;
+    } catch (err) {
+      console.error(`[payments] Failed to generate address for ${input.assetSymbol}:${input.network}:`, err);
       return res.status(400).json({ error: "Deposit address is not configured for this coin and network" });
     }
-    depositAddress = generated.address;
-    walletId = `provider:${input.assetSymbol}:${input.network}`;
-    provider = cryptoProvider.name;
   }
 
   const deposit = await prisma.$transaction(async (tx) => {
@@ -103,7 +126,7 @@ paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async 
         companyWalletId: walletId,
         assetSymbol: input.assetSymbol,
         network: input.network,
-        provider,
+        provider: providerName,
         providerAddressId: walletId,
         depositAddress,
         txHash: input.txHash,
@@ -118,7 +141,8 @@ paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async 
         action: "MANUAL_DEPOSIT_REQUESTED",
         entity: "Deposit",
         entityId: created.id,
-        ipAddress: req.ip
+        ipAddress: req.ip,
+        ...(derivationPath ? { metadata: JSON.stringify({ derivationPath, provider: providerName }) } : {})
       }
     });
     await tx.notification.create({

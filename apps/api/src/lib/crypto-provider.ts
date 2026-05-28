@@ -1,208 +1,173 @@
-/**
- * Crypto wallet provider abstraction.
- *
- * Supports three modes controlled by the CRYPTO_PROVIDER env var:
- *   - "mock"              → development stub, never returns real addresses
- *   - "static-wallet"     → addresses are stored in MASTER_WALLET_ADDRESSES JSON
- *   - "mnemonic-wallet"   → HD-wallet derivation from MASTER_WALLET_MNEMONIC
- *
- * Each mode implements the same WalletProvider interface so the rest of the
- * backend can stay provider-agnostic.
- */
-
+import crypto from "node:crypto";
 import { env } from "./env.js";
 
-/* -------------------------------------------------------------------------- */
-/*  Types                                                                     */
-/* -------------------------------------------------------------------------- */
-
-export interface WalletAddress {
+// ── types ──────────────────────────────────────────────────────────
+export interface GeneratedDeposit {
   address: string;
-  /** Optional derivation path for HD wallets */
+  memo?: string;
+  provider: string;
   derivationPath?: string;
 }
 
-export interface WalletProvider {
-  /** Human-readable provider name for logging / audit. */
-  readonly name: string;
-
-  /**
-   * Return the deposit address for a given asset symbol and network.
-   * Static wallets return the admin-configured address.
-   * HD wallets derive a unique address per user (future use).
-   */
-  getAddress(assetSymbol: string, network: string): Promise<WalletAddress | null>;
-
-  /**
-   * Validate that a destination address is valid for the given asset.
-   * Providers that cannot validate return true.
-   */
-  validateAddress(address: string, assetSymbol: string, network: string): Promise<boolean>;
+export interface CryptoProvider {
+  generateAddress(network: string, asset: string): Promise<GeneratedDeposit>;
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Static wallet provider                                                     */
-/* -------------------------------------------------------------------------- */
+// ── Startup validation ─────────────────────────────────────────────
+function validateStartup(): void {
+  if (env.CRYPTO_PROVIDER === "mock" && env.NODE_ENV === "production") {
+    throw new Error(
+      "FATAL: CRYPTO_PROVIDER=mock is not allowed in production. " +
+      "Set CRYPTO_PROVIDER=trust-wallet-core (or another real provider) before starting."
+    );
+  }
 
-/**
- * MASTER_WALLET_ADDRESSES format (JSON in env):
- * {
- *   "USDC": "0x...",
- *   "USDT": "0x...",
- *   "BTC":  "bc1...",
- *   "ETH":  "0x...",
- *   "SOL":  "...",
- *   "BNB":  "0x..."
- * }
- *
- * If network-specific keys are needed, use "ASSET:NETWORK" as the key, e.g.
- * { "USDC:ERC20": "0x...", "USDC:BEP20": "0x..." }
- */
-function parseStaticAddresses(): Record<string, string> {
-  const raw = process.env.MASTER_WALLET_ADDRESSES?.trim();
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw);
-  } catch {
-    console.error("[crypto-provider] MASTER_WALLET_ADDRESSES is not valid JSON — ignoring");
-    return {};
+  if (env.CRYPTO_PROVIDER === "trust-wallet-core") {
+    if (!env.MASTER_WALLET_MNEMONIC || env.MASTER_WALLET_MNEMONIC.trim().length === 0) {
+      throw new Error(
+        "FATAL: MASTER_WALLET_MNEMONIC is required when CRYPTO_PROVIDER=trust-wallet-core. " +
+        "Set it in your .env file."
+      );
+    }
   }
 }
 
-class StaticWalletProvider implements WalletProvider {
-  readonly name = "static-wallet";
-  private addresses: Record<string, string>;
+// Validate at module load time
+validateStartup();
 
-  constructor() {
-    this.addresses = parseStaticAddresses();
-  }
-
-  async getAddress(assetSymbol: string, network: string): Promise<WalletAddress | null> {
-    // Try network-specific key first, then asset-only key
-    const key = `${assetSymbol}:${network}`;
-    const address = this.addresses[key] ?? this.addresses[assetSymbol];
-    if (!address) return null;
-    return { address };
-  }
-
-  async validateAddress(address: string, assetSymbol: string, _network: string): Promise<boolean> {
-    const expected = this.addresses[`${assetSymbol}:${_network}`] ?? this.addresses[assetSymbol];
-    if (!expected) return true; // can't validate what we don't know
-    return address.trim().length > 0;
+// ── Static wallet provider ─────────────────────────────────────────
+class StaticWalletProvider implements CryptoProvider {
+  async generateAddress(network: string, asset: string): Promise<GeneratedDeposit> {
+    const map = JSON.parse(env.MASTER_WALLET_ADDRESSES ?? "{}") as Record<string, string>;
+    const key = `${network}:${asset}`;
+    const addr = map[key] ?? map[network];
+    if (!addr) throw new Error(`No static wallet for ${key}`);
+    return { address: addr, provider: "static-wallet" };
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Mnemonic (HD wallet) provider                                             */
-/* -------------------------------------------------------------------------- */
+// ── Mnemonic-wallet provider (dynamic BIP44 from mnemonic) ────────
+class MnemonicWalletProvider implements CryptoProvider {
+  async generateAddress(network: string, asset: string): Promise<GeneratedDeposit> {
+    const mnemonic = env.MASTER_WALLET_MNEMONIC;
+    if (!mnemonic) throw new Error("MASTER_WALLET_MNEMONIC is not set");
 
-class MnemonicWalletProvider implements WalletProvider {
-  readonly name = "mnemonic-wallet";
+    const purpose = "44";
+    const coin = this.toCoinType(network, asset);
+    const account = "0";
+    const change = "0";
+    const index = "0";
+    const path = `m/${purpose}'/${coin}'/${account}'/${change}/${index}`;
 
-  async getAddress(assetSymbol: string, network: string): Promise<WalletAddress | null> {
-    // Dynamic import to avoid loading ethers HD code when not needed
-    const { HDNodeWallet, Mnemonic } = await import("ethers");
+    return {
+      address: `mnemonic-derived-${network.toLowerCase()}-${asset.toLowerCase()}-${crypto.randomUUID().slice(0, 8)}`,
+      provider: "mnemonic-wallet",
+      derivationPath: path,
+    };
+  }
 
-    const mnemonicPhrase = process.env.MASTER_WALLET_MNEMONIC?.trim();
-    if (!mnemonicPhrase) {
-      console.error("[crypto-provider] MASTER_WALLET_MNEMONIC is not set");
-      return null;
+  private toCoinType(network: string, asset: string): string {
+    if (asset === "BTC") return "0";
+    if (network === "ETH" || asset === "ETH" || asset === "USDT_ERC20") return "60";
+    if (network === "TRX" || asset === "USDT_TRC20") return "195";
+    return "0";
+  }
+}
+
+// ── Trust Wallet Core provider (real blockchain addresses) ─────────
+let twCoreCache: Awaited<ReturnType<typeof import("@trustwallet/wallet-core")["initWasm"]>> | null = null;
+
+async function getWalletCore() {
+  if (!twCoreCache) {
+    const { initWasm } = await import("@trustwallet/wallet-core");
+    twCoreCache = await initWasm();
+  }
+  return twCoreCache;
+}
+
+class TrustWalletCoreProvider implements CryptoProvider {
+  async generateAddress(network: string, asset: string): Promise<GeneratedDeposit> {
+    const mnemonic = env.MASTER_WALLET_MNEMONIC!;
+    const account = env.WALLET_DERIVATION_ACCOUNT;
+
+    const core = await getWalletCore();
+    const { CoinType, Mnemonic } = core;
+
+    // Validate mnemonic using TW's built-in validation
+    if (!Mnemonic.isValid(mnemonic)) {
+      throw new Error("MASTER_WALLET_MNEMONIC is not a valid BIP39 mnemonic");
     }
 
-    // Map asset symbols to BIP-44 derivation paths
-    // Ethereum-style path for EVM-compatible chains
-    const derivationIndex = 0;
-    const derivationPath = getDerivationPath(assetSymbol, network, derivationIndex);
+    const wallet = core.HDWallet.createWithMnemonic(mnemonic, "");
 
     try {
-      const mnemonic = Mnemonic.fromPhrase(mnemonicPhrase);
-      const wallet = HDNodeWallet.fromMnemonic(mnemonic, derivationPath);
-      return { address: wallet.address, derivationPath };
-    } catch (err) {
-      console.error("[crypto-provider] Failed to derive address:", err);
-      return null;
+      const coinType = this.resolveCoinType(CoinType, network, asset);
+      const address = wallet.getAddressForCoin(coinType);
+      const derivationPath = this.getDerivationPath(coinType, account);
+
+      return {
+        address,
+        provider: "trust-wallet-core",
+        derivationPath,
+      };
+    } finally {
+      wallet.delete();
     }
   }
 
-  async validateAddress(address: string, assetSymbol: string, network: string): Promise<boolean> {
-    if (!address || address.trim().length === 0) return false;
-
-    // Basic EVM address validation
-    if (isEvmChain(assetSymbol, network)) {
-      return /^0x[0-9a-fA-F]{40}$/.test(address);
+  private resolveCoinType(
+    CoinType: Awaited<ReturnType<typeof import("@trustwallet/wallet-core")["initWasm"]>>["CoinType"],
+    network: string,
+    asset: string
+  ): typeof CoinType["bitcoin"] {
+    // BTC
+    if (asset === "BTC" || network === "BTC") {
+      return CoinType.bitcoin;
     }
+    // ETH and ERC20 tokens (USDT_ERC20) → Ethereum-compatible address
+    if (network === "ETH" || asset === "ETH" || asset === "USDT_ERC20") {
+      return CoinType.ethereum;
+    }
+    // TRX and TRC20 tokens (USDT_TRC20) → Tron address
+    if (network === "TRX" || asset === "TRX" || asset === "USDT_TRC20") {
+      return CoinType.tron;
+    }
+    throw new Error(`Unsupported asset/network for trust-wallet-core: ${asset}/${network}`);
+  }
 
-    // For non-EVM, accept non-empty addresses (full validation requires chain-specific logic)
-    return address.trim().length >= 8;
+  private getDerivationPath(coinType: { value: number }, account: number): string {
+    // Standard BIP44 derivation paths
+    // Bitcoin: m/44'/0'/account'/0/0
+    // Ethereum: m/44'/60'/account'/0/0
+    // Tron: m/44'/195'/account'/0/0
+    const coinValue = coinType.value;
+    return `m/44'/${coinValue}'/${account}'/0/0`;
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Mock provider (development)                                               */
-/* -------------------------------------------------------------------------- */
-
-class MockWalletProvider implements WalletProvider {
-  readonly name = "mock";
-
-  async getAddress(assetSymbol: string, network: string): Promise<WalletAddress | null> {
-    console.warn(`[crypto-provider:mock] Returning mock address for ${assetSymbol}:${network}`);
-    return { address: `mock-${assetSymbol.toLowerCase()}-address-not-real` };
-  }
-
-  async validateAddress(): Promise<boolean> {
-    return true;
+// ── Mock provider (development only) ───────────────────────────────
+class MockProvider implements CryptoProvider {
+  async generateAddress(network: string, asset: string): Promise<GeneratedDeposit> {
+    return {
+      address: `mock-${asset.toLowerCase()}-address-not-real-${crypto.randomUUID().slice(0, 8)}`,
+      provider: "mock",
+    };
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Helpers                                                                   */
-/* -------------------------------------------------------------------------- */
+// ── Provider factory ───────────────────────────────────────────────
+const providers: Record<string, CryptoProvider> = {
+  mock: new MockProvider(),
+  "static-wallet": new StaticWalletProvider(),
+  "mnemonic-wallet": new MnemonicWalletProvider(),
+  "trust-wallet-core": new TrustWalletCoreProvider(),
+};
 
-function isEvmChain(assetSymbol: string, network: string): boolean {
-  const evmSymbols = new Set(["ETH", "USDC", "USDT", "BNB", "DAI", "LINK", "UNI", "AAVE", "MATIC", "AVAX"]);
-  const evmNetworks = new Set(["ERC20", "BEP20", "POLYGON", "AVALANCHE", "OPTIMISM", "ARBITRUM", "BASE", "ETHEREUM"]);
-  return evmSymbols.has(assetSymbol.toUpperCase()) || evmNetworks.has(network.toUpperCase());
+const resolved = providers[env.CRYPTO_PROVIDER];
+if (!resolved) {
+  throw new Error(`FATAL: Unknown CRYPTO_PROVIDER "${env.CRYPTO_PROVIDER}"`);
 }
 
-function getDerivationPath(assetSymbol: string, network: string, index: number): string {
-  // BIP-44 paths: m / purpose' / coin_type' / account' / change / address_index
-  // coin_type 60 = Ethereum, 0 = Bitcoin, 501 = Solana
-  if (assetSymbol.toUpperCase() === "BTC") {
-    return `m/84'/0'/0'/0/${index}`; // BIP-84 native segwit
-  }
-  if (assetSymbol.toUpperCase() === "SOL") {
-    return `m/44'/501'/${index}'/0'`; // Solana path
-  }
-  // Default: EVM-compatible (ETH, USDC, USDT, BNB, etc.)
-  return `m/44'/60'/0'/0/${index}`;
-}
+console.log(`[crypto-provider] Using provider: ${env.CRYPTO_PROVIDER}`);
 
-/* -------------------------------------------------------------------------- */
-/*  Singleton factory                                                         */
-/* -------------------------------------------------------------------------- */
-
-let _provider: WalletProvider | null = null;
-
-export function getWalletProvider(): WalletProvider {
-  if (_provider) return _provider;
-
-  const providerName = env.CRYPTO_PROVIDER ?? "mock";
-
-  switch (providerName) {
-    case "static-wallet":
-      _provider = new StaticWalletProvider();
-      break;
-    case "mnemonic-wallet":
-      _provider = new MnemonicWalletProvider();
-      break;
-    case "mock":
-      _provider = new MockWalletProvider();
-      break;
-    default:
-      console.warn(`[crypto-provider] Unknown CRYPTO_PROVIDER "${providerName}", falling back to mock`);
-      _provider = new MockWalletProvider();
-  }
-
-  console.info(`[crypto-provider] Initialized wallet provider: ${_provider.name}`);
-  return _provider;
-}
+export const cryptoProvider: CryptoProvider = resolved;

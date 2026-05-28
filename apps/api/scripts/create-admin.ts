@@ -14,7 +14,7 @@
  *   npx tsx scripts/create-admin.ts
  */
 import "dotenv/config";
-import { PrismaClient, type UserRole } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcrypt";
 
 const prisma = new PrismaClient();
@@ -42,7 +42,7 @@ async function main() {
     const updated = await prisma.user.update({
       where: { email },
       data: {
-        role: "ADMIN" as UserRole,
+        role: "ADMIN",
         // Only update password if it was not previously set
         ...(existing.passwordHash ? {} : { passwordHash }),
         emailVerifiedAt: existing.emailVerifiedAt ?? new Date()
@@ -67,7 +67,7 @@ async function main() {
       data: {
         email,
         passwordHash,
-        role: "ADMIN" as UserRole,
+        role: "ADMIN",
         emailVerifiedAt: new Date(),
         riskConsentAt: new Date(),
         profile: { create: { firstName, lastName, timezone: "Africa/Lagos" } }

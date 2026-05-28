@@ -11,7 +11,6 @@
  *  - never logs the password
  */
 
-import { type UserRole } from "@prisma/client";
 import bcrypt from "bcrypt";
 import { prisma } from "./prisma.js";
 
@@ -53,7 +52,7 @@ export async function ensureAdminUser(): Promise<void> {
     await prisma.user.update({
       where: { email },
       data: {
-        role: "ADMIN" as UserRole,
+        role: "ADMIN",
         ...(shouldResetPassword ? { passwordHash } : {}),
         emailVerifiedAt: existing.emailVerifiedAt ?? new Date()
       }
@@ -72,7 +71,7 @@ export async function ensureAdminUser(): Promise<void> {
       data: {
         email,
         passwordHash,
-        role: "ADMIN" as UserRole,
+        role: "ADMIN",
         emailVerifiedAt: new Date(),
         riskConsentAt: new Date(),
         profile: { create: { firstName, lastName, timezone: "Africa/Lagos" } }

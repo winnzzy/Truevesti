@@ -13,6 +13,7 @@ import { supportRouter } from "./modules/support/support.routes.js";
 import { notificationRouter } from "./modules/notifications/notification.routes.js";
 import { withdrawalRouter } from "./modules/withdrawals/withdrawal.routes.js";
 import { kycRouter } from "./modules/kyc/kyc.routes.js";
+import { ensureAdminUser } from "./lib/ensure-admin.js";
 
 const logger = pino();
 const app = express();
@@ -51,6 +52,10 @@ try {
   logger.warn({ err }, "Email provider is not fully configured — signup OTP emails will fail until env vars are set");
 }
 
-app.listen(env.PORT, () => {
-  logger.info(`Truevesti API listening on ${env.PORT}`);
-});
+ensureAdminUser()
+  .catch((err) => logger.error({ err }, "ensureAdminUser failed"))
+  .finally(() => {
+    app.listen(env.PORT, () => {
+      logger.info(`Truevesti API listening on ${env.PORT}`);
+    });
+  });

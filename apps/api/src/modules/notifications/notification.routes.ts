@@ -1,10 +1,10 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
 export const notificationRouter = Router();
 
-notificationRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+notificationRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const notifications = await prisma.notification.findMany({
     where: { userId: req.user!.id },
     orderBy: { createdAt: "desc" },
@@ -14,7 +14,7 @@ notificationRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthR
   res.json({ notifications, unreadCount });
 });
 
-notificationRouter.patch("/:id/read", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+notificationRouter.patch("/:id/read", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const notification = await prisma.notification.findFirst({
     where: { id: req.params.id, userId: req.user!.id }
   });
@@ -30,7 +30,7 @@ notificationRouter.patch("/:id/read", requireAuth, requireEmailVerified, async (
   res.json({ success: true });
 });
 
-notificationRouter.post("/read-all", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+notificationRouter.post("/read-all", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   await prisma.notification.updateMany({
     where: { userId: req.user!.id, readAt: null },
     data: { readAt: new Date() }

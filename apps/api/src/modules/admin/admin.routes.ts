@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { getReadinessChecks } from "../../lib/readiness.js";
@@ -30,7 +30,7 @@ function actorId(req: AuthRequest) {
 }
 
 /** No Render Shell needed — call from PowerShell with x-purge-secret header. */
-adminRouter.post("/purge-user", async (req, res) => {
+adminRouter.post("/purge-user", async (req, res: Response) => {
   const secret = process.env.ADMIN_PURGE_SECRET?.trim();
   const provided = req.header("x-purge-secret")?.trim();
 
@@ -53,7 +53,7 @@ adminRouter.post("/purge-user", async (req, res) => {
 
 adminRouter.use(requireAuth, requireRole("ADMIN"));
 
-adminRouter.get("/overview", async (_req, res) => {
+adminRouter.get("/overview", async (_req, res: Response) => {
   const [users, pendingWithdrawals, pendingDeposits, activeInvestments, pendingKyc, openTickets] = await Promise.all([
     prisma.user.count(),
     prisma.withdrawal.count({ where: { status: "PENDING" } }),
@@ -65,7 +65,7 @@ adminRouter.get("/overview", async (_req, res) => {
   res.json({ users, pendingWithdrawals, pendingDeposits, activeInvestments, pendingKyc, openTickets });
 });
 
-adminRouter.get("/users", async (_req, res) => {
+adminRouter.get("/users", async (_req, res: Response) => {
   const users = await prisma.user.findMany({
     select: {
       id: true,
@@ -86,19 +86,19 @@ adminRouter.get("/users", async (_req, res) => {
   res.json({ users: withBalances });
 });
 
-adminRouter.get("/audit-logs", async (_req, res) => {
+adminRouter.get("/audit-logs", async (_req, res: Response) => {
   const logs = await prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
   res.json({ logs });
 });
 
-adminRouter.get("/company-wallets", async (_req, res) => {
+adminRouter.get("/company-wallets", async (_req, res: Response) => {
   const wallets = await prisma.companyWalletAddress.findMany({
     orderBy: [{ assetSymbol: "asc" }, { network: "asc" }]
   });
   res.json({ wallets });
 });
 
-adminRouter.post("/company-wallets", async (req: AuthRequest, res) => {
+adminRouter.post("/company-wallets", async (req: AuthRequest, res: Response) => {
   const input = walletAddressSchema.parse(req.body);
   const wallet = await prisma.$transaction(async (tx) => {
     const saved = await tx.companyWalletAddress.upsert({
@@ -128,7 +128,7 @@ adminRouter.post("/company-wallets", async (req: AuthRequest, res) => {
   res.status(201).json({ wallet });
 });
 
-adminRouter.patch("/company-wallets/:id", async (req: AuthRequest, res) => {
+adminRouter.patch("/company-wallets/:id", async (req: AuthRequest, res: Response) => {
   const input = walletAddressUpdateSchema.parse(req.body);
   const wallet = await prisma.$transaction(async (tx) => {
     const saved = await tx.companyWalletAddress.update({
@@ -149,7 +149,7 @@ adminRouter.patch("/company-wallets/:id", async (req: AuthRequest, res) => {
   res.json({ wallet });
 });
 
-adminRouter.get("/deposits", async (_req, res) => {
+adminRouter.get("/deposits", async (_req, res: Response) => {
   const deposits = await prisma.deposit.findMany({
     include: {
       user: { select: { email: true } },
@@ -161,7 +161,7 @@ adminRouter.get("/deposits", async (_req, res) => {
   res.json({ deposits });
 });
 
-adminRouter.get("/readiness", async (_req, res) => {
+adminRouter.get("/readiness", async (_req, res: Response) => {
   const checks = getReadinessChecks();
   const criticalOpen = checks.filter((check) => !check.ok && check.severity === "critical").length;
   const warningsOpen = checks.filter((check) => !check.ok && check.severity === "warning").length;
@@ -175,12 +175,12 @@ adminRouter.get("/readiness", async (_req, res) => {
   });
 });
 
-adminRouter.get("/plans", async (_req, res) => {
+adminRouter.get("/plans", async (_req, res: Response) => {
   const plans = await prisma.investmentPlan.findMany({ orderBy: { minDepositUsd: "asc" } });
   res.json({ plans });
 });
 
-adminRouter.post("/plans", async (req: AuthRequest, res) => {
+adminRouter.post("/plans", async (req: AuthRequest, res: Response) => {
   const input = planSchema.parse(req.body);
   const plan = await prisma.$transaction(async (tx) => {
     const created = await tx.investmentPlan.create({ data: { ...input, isActive: input.isActive ?? true } });
@@ -198,7 +198,7 @@ adminRouter.post("/plans", async (req: AuthRequest, res) => {
   res.status(201).json({ plan });
 });
 
-adminRouter.patch("/plans/:id", async (req: AuthRequest, res) => {
+adminRouter.patch("/plans/:id", async (req: AuthRequest, res: Response) => {
   const input = planSchema.partial().parse(req.body);
   const plan = await prisma.$transaction(async (tx) => {
     const updated = await tx.investmentPlan.update({ where: { id: req.params.id }, data: input });
@@ -216,7 +216,7 @@ adminRouter.patch("/plans/:id", async (req: AuthRequest, res) => {
   res.json({ plan });
 });
 
-adminRouter.get("/investments", async (_req, res) => {
+adminRouter.get("/investments", async (_req, res: Response) => {
   const investments = await prisma.investment.findMany({
     include: {
       user: { select: { email: true, profile: true } },
@@ -228,7 +228,7 @@ adminRouter.get("/investments", async (_req, res) => {
   res.json({ investments });
 });
 
-adminRouter.patch("/deposits/:id/decision", async (req: AuthRequest, res) => {
+adminRouter.patch("/deposits/:id/decision", async (req: AuthRequest, res: Response) => {
   const input = depositDecisionSchema.parse(req.body);
   const deposit = await prisma.$transaction(async (tx) => {
     const updated = await tx.deposit.update({
@@ -265,7 +265,7 @@ adminRouter.patch("/deposits/:id/decision", async (req: AuthRequest, res) => {
   res.json({ deposit });
 });
 
-adminRouter.get("/withdrawals", async (_req, res) => {
+adminRouter.get("/withdrawals", async (_req, res: Response) => {
   const withdrawals = await prisma.withdrawal.findMany({
     include: {
       user: { select: { email: true, profile: true } }
@@ -276,7 +276,7 @@ adminRouter.get("/withdrawals", async (_req, res) => {
   res.json({ withdrawals });
 });
 
-adminRouter.get("/kyc", async (_req, res) => {
+adminRouter.get("/kyc", async (_req, res: Response) => {
   const checks = await prisma.kycCheck.findMany({
     include: { user: { select: { email: true, profile: true } } },
     orderBy: { createdAt: "desc" },
@@ -285,7 +285,7 @@ adminRouter.get("/kyc", async (_req, res) => {
   res.json({ checks });
 });
 
-adminRouter.patch("/kyc/:id/decision", async (req: AuthRequest, res) => {
+adminRouter.patch("/kyc/:id/decision", async (req: AuthRequest, res: Response) => {
   const input = z.object({
     status: z.enum(["VERIFIED", "REJECTED", "PENDING"]),
     reason: z.string().max(1000).optional()
@@ -314,7 +314,7 @@ adminRouter.patch("/kyc/:id/decision", async (req: AuthRequest, res) => {
   res.json({ check });
 });
 
-adminRouter.get("/support/tickets", async (_req, res) => {
+adminRouter.get("/support/tickets", async (_req, res: Response) => {
   const tickets = await prisma.supportTicket.findMany({
     include: { user: { select: { email: true, profile: true } } },
     orderBy: { createdAt: "desc" },
@@ -323,7 +323,7 @@ adminRouter.get("/support/tickets", async (_req, res) => {
   res.json({ tickets });
 });
 
-adminRouter.patch("/support/tickets/:id", async (req: AuthRequest, res) => {
+adminRouter.patch("/support/tickets/:id", async (req: AuthRequest, res: Response) => {
   const input = z.object({
     status: z.string().min(2).max(40),
     adminResponse: z.string().min(3).max(4000)
@@ -354,7 +354,7 @@ adminRouter.patch("/support/tickets/:id", async (req: AuthRequest, res) => {
   res.json({ ticket });
 });
 
-adminRouter.patch("/withdrawals/:id/decision", async (req: AuthRequest, res) => {
+adminRouter.patch("/withdrawals/:id/decision", async (req: AuthRequest, res: Response) => {
   const input = z.discriminatedUnion("status", [
     z.object({ status: z.literal("APPROVED"), adminNote: z.string().max(1000).optional() }),
     z.object({ status: z.literal("REJECTED"), reason: z.string().min(3).max(1000) }),
@@ -405,7 +405,7 @@ adminRouter.patch("/withdrawals/:id/decision", async (req: AuthRequest, res) => 
   res.json({ withdrawal });
 });
 
-adminRouter.post("/run-accruals", async (req: AuthRequest, res) => {
+adminRouter.post("/run-accruals", async (req: AuthRequest, res: Response) => {
   try {
     const result = await runDailyAccruals();
     await prisma.auditLog.create({

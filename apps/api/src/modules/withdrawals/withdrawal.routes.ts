@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { getUserBalance } from "../../lib/balances.js";
 import { cryptoProvider } from "../../lib/crypto-provider.js";
@@ -48,7 +48,7 @@ function validateAddressFormat(destination: string, assetSymbol: string, network
   return addr.length >= 8 && addr.length <= 240;
 }
 
-withdrawalRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+withdrawalRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const withdrawals = await prisma.withdrawal.findMany({
     where: { userId: req.user!.id },
     include: { investment: { include: { plan: true } } },
@@ -58,7 +58,7 @@ withdrawalRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthReq
   res.json({ withdrawals });
 });
 
-withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const input = z.object({
     assetSymbol: z.enum(["BTC", "ETH", "USDT", "USDC", "BNB", "SOL"]),
     network: z.string().min(2).transform((s: string) => s.toUpperCase()),
@@ -78,7 +78,7 @@ withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
     return res.status(400).json({ error: "Withdrawal amount exceeds available balance" });
   }
 
-  const withdrawal = await prisma.$transaction(async (tx: any) => {
+  const withdrawal = await prisma.$transaction(async (tx) => {
     const created = await tx.withdrawal.create({
       data: {
         userId: req.user!.id,

@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
@@ -11,7 +11,7 @@ const ticketSchema = z.object({
   subject: z.string().min(3).max(160)
 });
 
-supportRouter.get("/tickets", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+supportRouter.get("/tickets", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const tickets = await prisma.supportTicket.findMany({
     where: { userId: req.user!.id },
     orderBy: { createdAt: "desc" },
@@ -20,7 +20,7 @@ supportRouter.get("/tickets", requireAuth, requireEmailVerified, async (req: Aut
   res.json({ tickets });
 });
 
-supportRouter.post("/tickets", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+supportRouter.post("/tickets", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const input = ticketSchema.parse(req.body);
   const ticket = await prisma.$transaction(async (tx) => {
     const created = await tx.supportTicket.create({

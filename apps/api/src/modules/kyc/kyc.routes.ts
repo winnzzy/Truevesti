@@ -1,11 +1,11 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
 export const kycRouter = Router();
 
-kycRouter.get("/status", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+kycRouter.get("/status", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const checks = await prisma.kycCheck.findMany({
     where: { userId: req.user!.id },
     orderBy: { createdAt: "desc" },
@@ -14,7 +14,7 @@ kycRouter.get("/status", requireAuth, requireEmailVerified, async (req: AuthRequ
   res.json({ checks, current: checks[0] ?? null });
 });
 
-kycRouter.post("/manual", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+kycRouter.post("/manual", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const input = z.object({
     reason: z.string().max(500).optional()
   }).parse(req.body);

@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { getUserBalance } from "../../lib/balances.js";
 import { computeAccrualSnapshot, expectedReturnForPlan } from "../../lib/investment-math.js";
@@ -7,6 +7,7 @@ import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middl
 
 export const investmentRouter = Router();
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Prisma include result varies per query
 function enrichInvestment(investment: any) {
   return {
     ...investment,
@@ -14,7 +15,7 @@ function enrichInvestment(investment: any) {
   };
 }
 
-investmentRouter.get("/plans", async (_req, res) => {
+investmentRouter.get("/plans", async (_req, res: Response) => {
   const plans = await prisma.investmentPlan.findMany({ where: { isActive: true }, orderBy: { minDepositUsd: "asc" } });
   res.json({ plans });
 });
@@ -60,7 +61,7 @@ investmentRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
     return res.status(400).json({ error: "Asset is not supported by this plan" });
   }
 
-  const investment = await prisma.$transaction(async (tx: any) => {
+  const investment = await prisma.$transaction(async (tx) => {
     const balance = await getUserBalance(req.user!.id, tx);
     if (principalUsd > Number(balance.availableUsd)) {
       throw Object.assign(new Error("Investment amount exceeds available approved balance"), { status: 400 });

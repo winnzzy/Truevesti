@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { getUserBalance } from "../../lib/balances.js";
 import { cryptoProvider } from "../../lib/crypto-provider.js";
 import { manualDepositRequestSchema, supportedManualDepositOptions } from "../../lib/manual-deposits.js";
@@ -28,7 +28,7 @@ function mapToProviderParams(assetSymbol: string, network: string): [string, str
   return result;
 }
 
-paymentRouter.get("/deposits", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+paymentRouter.get("/deposits", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const deposits = await prisma.deposit.findMany({
     where: { userId: req.user!.id },
     orderBy: { createdAt: "desc" },
@@ -37,12 +37,12 @@ paymentRouter.get("/deposits", requireAuth, requireEmailVerified, async (req: Au
   res.json({ deposits });
 });
 
-paymentRouter.get("/balance", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+paymentRouter.get("/balance", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const balance = await getUserBalance(req.user!.id);
   res.json({ balance });
 });
 
-paymentRouter.get("/deposit-options", requireAuth, requireEmailVerified, async (_req: AuthRequest, res) => {
+paymentRouter.get("/deposit-options", requireAuth, requireEmailVerified, async (_req: AuthRequest, res: Response) => {
   const wallets = await prisma.companyWalletAddress.findMany({
     where: { isActive: true },
     orderBy: [{ assetSymbol: "asc" }, { network: "asc" }]
@@ -91,7 +91,7 @@ paymentRouter.get("/deposit-options", requireAuth, requireEmailVerified, async (
   res.json({ options });
 });
 
-paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const input = manualDepositRequestSchema.parse(req.body);
 
   // Look up admin-configured wallet first, then fall back to crypto-provider

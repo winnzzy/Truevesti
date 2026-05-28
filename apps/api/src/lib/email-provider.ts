@@ -11,7 +11,11 @@ export type EmailMessage = {
 async function sendWithResend(message: EmailMessage) {
   const config = validateEmailConfiguration();
   const apiKey = process.env.RESEND_API_KEY!.trim();
-  const from = config.mode === "resend" ? config.from : "onboarding@resend.dev";
+  const from = config.mode === "resend" ? config.from : undefined;
+
+  if (!from) {
+    throw new Error("EMAIL_FROM is not configured. Cannot send email via Resend.");
+  }
 
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",

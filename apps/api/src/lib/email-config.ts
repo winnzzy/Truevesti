@@ -26,8 +26,17 @@ export function validateEmailConfiguration() {
         "RESEND_API_KEY is missing. Add it in Render environment variables, or set EMAIL_PROVIDER=console to log OTP codes in server logs."
       );
     }
-    // Resend test sender — use plain address; display names can fail validation on some accounts.
-    return { ok: true as const, provider, mode: "resend" as const, from: from || "onboarding@resend.dev" };
+    if (!from) {
+      // In production, EMAIL_FROM is mandatory so emails are sent from the verified domain.
+      if (process.env.NODE_ENV === "production") {
+        throw new EmailConfigurationError(
+          "EMAIL_FROM is required in production. Set it to an address on your verified Resend domain (e.g. noreply@yourdomain.com)."
+        );
+      }
+      // In development, allow falling back to Resend's built-in test sender.
+      return { ok: true as const, provider, mode: "resend" as const, from: "onboarding@resend.dev" };
+    }
+    return { ok: true as const, provider, mode: "resend" as const, from };
   }
 
   if (provider === "sendgrid") {

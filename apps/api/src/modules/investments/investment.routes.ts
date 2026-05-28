@@ -20,7 +20,7 @@ investmentRouter.get("/plans", async (_req, res: Response) => {
   res.json({ plans });
 });
 
-investmentRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+investmentRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const investments = await prisma.investment.findMany({
     where: { userId: req.user!.id },
     include: { plan: true },
@@ -31,7 +31,7 @@ investmentRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthReq
   res.json({ investments: investments.map(enrichInvestment), balance });
 });
 
-investmentRouter.get("/:id", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+investmentRouter.get("/:id", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const investment = await prisma.investment.findFirst({
     where: { id: req.params.id, userId: req.user!.id },
     include: { plan: true, accruals: { orderBy: { date: "desc" }, take: 90 } }
@@ -43,7 +43,7 @@ investmentRouter.get("/:id", requireAuth, requireEmailVerified, async (req: Auth
   res.json({ investment: { ...enriched, accruals: investment.accruals } });
 });
 
-investmentRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res) => {
+investmentRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
   const input = z.object({
     planId: z.string().min(1),
     principalUsd: z.number().positive(),

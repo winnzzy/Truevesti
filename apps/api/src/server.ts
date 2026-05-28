@@ -22,7 +22,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
-app.get("/health", (_req, res) => res.json({ ok: true, service: "truevesti-api" }));
+app.get("/health", (_req: express.Request, res: express.Response) => res.json({ ok: true, service: "truevesti-api" }));
 app.use("/auth", authRouter);
 app.use("/investments", investmentRouter);
 app.use("/payments", paymentRouter);

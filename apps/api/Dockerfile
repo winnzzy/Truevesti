@@ -8,7 +8,8 @@ COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 
 # Install ALL dependencies including devDependencies (needed for tsc @types/*).
-# Use --include=dev to override NODE_ENV=production set by Render at build time.
+# Unset NODE_ENV so npm doesn't skip devDependencies even if Render sets it.
+ENV NODE_ENV=
 RUN npm install --include=dev
 
 FROM node:20-alpine AS builder

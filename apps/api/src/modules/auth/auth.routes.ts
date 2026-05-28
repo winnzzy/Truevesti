@@ -118,7 +118,7 @@ const signupHandler = async (req: Request, res: Response) => {
 authRouter.post("/signup", otpRateLimiter, signupHandler);
 authRouter.post("/register", otpRateLimiter, signupHandler);
 
-authRouter.post("/otp/verify", async (req, res) => {
+authRouter.post("/otp/verify", async (req: Request, res: Response) => {
   try {
     const input = verifyOtpSchema.parse(req.body);
     const result = await verifySignupOtp(input.email, input.code);
@@ -136,7 +136,7 @@ authRouter.post("/otp/verify", async (req, res) => {
   }
 });
 
-authRouter.post("/otp/resend", otpRateLimiter, async (req, res) => {
+authRouter.post("/otp/resend", otpRateLimiter, async (req: Request, res: Response) => {
   try {
     const input = emailSchema.parse(req.body);
     const email = input.email.toLowerCase();
@@ -170,7 +170,7 @@ authRouter.post("/otp/resend", otpRateLimiter, async (req, res) => {
   }
 });
 
-authRouter.post("/login", async (req, res) => {
+authRouter.post("/login", async (req: Request, res: Response) => {
   try {
     const input = loginSchema.parse(req.body);
     const email = input.email.toLowerCase();
@@ -210,7 +210,7 @@ authRouter.post("/login", async (req, res) => {
   }
 });
 
-authRouter.get("/me", requireAuth, async (req: AuthRequest, res) => {
+authRouter.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
@@ -244,14 +244,14 @@ authRouter.get("/me", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-authRouter.post("/refresh", async (req, res) => {
+authRouter.post("/refresh", async (req: Request, res: Response) => {
   try {
     const input = z.object({ refreshToken: z.string().min(1) }).parse(req.body);
 
     let payload: { sub: string; role: string; sid: string };
     try {
       payload = await new Promise<{ sub: string; role: string; sid: string }>((resolve, reject) => {
-        jwt.verify(input.refreshToken, env.JWT_REFRESH_SECRET, (err, decoded) => {
+        jwt.verify(input.refreshToken, env.JWT_REFRESH_SECRET, (err: Error | null, decoded: string | jwt.JwtPayload | undefined) => {
           if (err) return reject(err);
           resolve(decoded as { sub: string; role: string; sid: string });
         });
@@ -292,13 +292,13 @@ authRouter.post("/refresh", async (req, res) => {
   }
 });
 
-authRouter.post("/logout", async (req, res) => {
+authRouter.post("/logout", async (req: Request, res: Response) => {
   try {
     const input = z.object({ refreshToken: z.string().min(1) }).parse(req.body);
 
     try {
       const payload = await new Promise<{ sid: string }>((resolve, reject) => {
-        jwt.verify(input.refreshToken, env.JWT_REFRESH_SECRET, (err, decoded) => {
+        jwt.verify(input.refreshToken, env.JWT_REFRESH_SECRET, (err: Error | null, decoded: string | jwt.JwtPayload | undefined) => {
           if (err) return reject(err);
           resolve(decoded as { sid: string });
         });
@@ -318,7 +318,7 @@ authRouter.post("/logout", async (req, res) => {
   }
 });
 
-authRouter.post("/password/forgot", otpRateLimiter, async (req, res) => {
+authRouter.post("/password/forgot", otpRateLimiter, async (req: Request, res: Response) => {
   try {
     const input = emailSchema.parse(req.body);
     const email = input.email.toLowerCase();
@@ -347,7 +347,7 @@ const resetPasswordSchema = z.object({
   newPassword: passwordSchema
 });
 
-authRouter.post("/password/reset/verify", async (req, res) => {
+authRouter.post("/password/reset/verify", async (req: Request, res: Response) => {
   try {
     const input = verifyOtpSchema.parse(req.body);
     const result = await verifyPasswordResetOtp(input.email, input.code);
@@ -365,7 +365,7 @@ authRouter.post("/password/reset/verify", async (req, res) => {
   }
 });
 
-authRouter.post("/password/reset", async (req, res) => {
+authRouter.post("/password/reset", async (req: Request, res: Response) => {
   try {
     const input = resetPasswordSchema.parse(req.body);
     const result = await verifyPasswordResetOtp(input.email, input.code);

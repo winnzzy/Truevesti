@@ -21,7 +21,7 @@ export default function AboutPage() {
       <Nav />
       <main>
         <PageIntro
-          description="Truevesti is a venture-grade software foundation for compliant crypto investment operations, combining secure onboarding, provider-based wallet infrastructure, admin controls, audit logs, user consent, and transparent risk presentation."
+          description="Truevestii is a venture-grade software foundation for compliant crypto investment operations, combining secure onboarding, provider-based wallet infrastructure, admin controls, audit logs, user consent, and transparent risk presentation."
           eyebrow="About the platform"
           title="Built for disciplined digital asset operations"
         >

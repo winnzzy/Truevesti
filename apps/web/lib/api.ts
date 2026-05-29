@@ -12,7 +12,7 @@ function getApiUrl() {
     if (hostname === "localhost" || hostname === "127.0.0.1") {
       return `${protocol}//${hostname}:4000`;
     }
-    if (hostname.endsWith(".vercel.app") || hostname.includes("truevesti")) {
+    if (hostname.endsWith(".vercel.app") || hostname.includes("truevesti") || hostname.includes("truevestii")) {
       return PRODUCTION_API_URL;
     }
   }

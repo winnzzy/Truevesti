@@ -1,4 +1,4 @@
-# Truevesti Remaining Process Stack
+# Truevestii Remaining Process Stack
 
 This is the working stack for finishing the prototype into a production-shaped platform. Items are ordered by risk and dependency.
 

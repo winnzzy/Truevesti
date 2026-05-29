@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Truevesti | Crypto Investment Operations",
+  title: "Truevestii | Crypto Investment Operations",
   description: "Compliance-ready crypto investment brokerage platform."
 };
 

@@ -17,7 +17,7 @@ export default function HomePage() {
             <div className="max-w-3xl">
               <p className="animate-rise text-sm font-semibold uppercase tracking-[0.28em] text-mint">Crypto brokerage operations</p>
               <h1 className="animate-rise mt-5 max-w-4xl text-5xl font-semibold leading-tight text-white md:text-7xl [animation-delay:120ms]">
-                Truevesti
+                Truevestii
               </h1>
               <p className="animate-rise mt-6 max-w-2xl text-lg leading-8 text-slate-300 [animation-delay:220ms]">
                 A compliance-ready investment platform scaffold for verified onboarding, crypto deposits,

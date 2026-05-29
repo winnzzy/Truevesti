@@ -24,7 +24,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
-app.get("/health", (_req: express.Request, res: express.Response) => res.json({ ok: true, service: "truevesti-api" }));
+app.get("/health", (_req: express.Request, res: express.Response) => res.json({ ok: true, service: "truevestii-api" }));
 app.use("/auth", authRouter);
 app.use("/investments", investmentRouter);
 app.use("/payments", paymentRouter);
@@ -58,6 +58,6 @@ ensureAdminUser()
   .catch((err) => logger.error({ err }, "Startup routines failed"))
   .finally(() => {
     app.listen(env.PORT, () => {
-      logger.info(`Truevesti API listening on ${env.PORT}`);
+      logger.info(`Truevestii API listening on ${env.PORT}`);
     });
   });

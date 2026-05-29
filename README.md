@@ -1,4 +1,4 @@
-# Truevesti
+# Truevestii
 
 A modern crypto investment brokerage platform. Users can register, complete verification, browse investment plans, make crypto deposits, and track their portfolio — all through a polished, responsive interface.
 
@@ -70,7 +70,7 @@ For local crypto address testing, set `CRYPTO_PROVIDER=mock` in `apps/api/.env` 
 ## Project Structure
 
 ```
-truevesti/
+truevestii/
 ├── apps/
 │   ├── api/          # Express backend (auth, payments, admin, investments)
 │   │   ├── prisma/   # Database schema & migrations

@@ -79,7 +79,7 @@ export function Nav() {
     <header className="sticky top-0 z-50 border-b border-white/10 bg-ink/85 backdrop-blur">
       <nav className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4">
         <Link href={session ? (isAdmin ? "/admin/dashboard" : "/dashboard") : "/"} className="text-xl font-semibold tracking-wide text-white">
-          Truevesti
+          Truevestii
         </Link>
         <div className="hidden items-center gap-7 text-sm text-slate-300 md:flex">
           {links.map(([label, href]) => (

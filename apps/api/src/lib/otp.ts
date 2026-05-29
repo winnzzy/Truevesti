@@ -29,9 +29,9 @@ export async function createAndSendSignupOtp(userId: string, email: string, expi
 
   await sendEmail({
     to: email,
-    subject: "Verify your Truevesti email",
+    subject: "Verify your Truevestii email",
     html: `
-      <p>Welcome to Truevesti.</p>
+      <p>Welcome to Truevestii.</p>
       <p>Your verification code is:</p>
       <p style="font-size:28px;font-weight:700;letter-spacing:0.2em;">${code}</p>
       <p>This code expires in ${expiryMinutes} minutes.</p>
@@ -98,9 +98,9 @@ export async function createAndSendPasswordResetOtp(userId: string, email: strin
 
   await sendEmail({
     to: email,
-    subject: "Reset your Truevesti password",
+    subject: "Reset your Truevestii password",
     html: `
-      <p>You requested a password reset for your Truevesti account.</p>
+      <p>You requested a password reset for your Truevestii account.</p>
       <p>Your reset code is:</p>
       <p style="font-size:28px;font-weight:700;letter-spacing:0.2em;">${code}</p>
       <p>This code expires in ${expiryMinutes} minutes.</p>

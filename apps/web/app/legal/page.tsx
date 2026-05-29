@@ -4,7 +4,7 @@ import { PageIntro } from "@/components/page-intro";
 const legalSections = [
   [
     "Risk disclosure",
-    "Truevesti does not guarantee profits, fabricate balances, or represent that estimated returns are certain. Crypto assets can lose value due to market, custody, technical, liquidity, and regulatory events."
+    "Truevestii does not guarantee profits, fabricate balances, or represent that estimated returns are certain. Crypto assets can lose value due to market, custody, technical, liquidity, and regulatory events."
   ],
   [
     "User obligations",

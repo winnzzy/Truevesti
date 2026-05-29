@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { getUserBalance } from "../../lib/balances.js";
+import { computeAccrualSnapshot } from "../../lib/investment-math.js";
 import { cryptoProvider } from "../../lib/crypto-provider.js";
 import { prisma } from "../../lib/prisma.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
@@ -73,10 +74,33 @@ withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
     return res.status(400).json({ error: "Invalid destination address for the selected asset and network" });
   }
 
-  // Check user has sufficient available balance
+  // Check user has sufficient withdrawable balance
+  // Rules:
+  //   Before maturity: only accrued PROFIT is withdrawable (not principal)
+  //   After maturity:  principal + profit are both withdrawable
   const balance = await getUserBalance(req.user!.id);
-  if (input.amountUsd > Number(balance.availableUsd)) {
-    return res.status(400).json({ error: "Withdrawal amount exceeds available balance" });
+  const availableBase = Number(balance.availableUsd);
+
+  // Sum accrued profit from ACTIVE investments (profit is withdrawable before maturity)
+  const activeInvestments = await prisma.investment.findMany({
+    where: { userId: req.user!.id, status: "ACTIVE" },
+    include: { plan: true }
+  });
+  const accruedProfit = activeInvestments.reduce((sum, inv) => {
+    const snapshot = computeAccrualSnapshot({
+      ...inv,
+      principalUsd: Number(inv.principalUsd),
+      expectedReturnUsd: Number(inv.expectedReturnUsd),
+    });
+    return sum + Number(snapshot.accruedInterestUsd);
+  }, 0);
+
+  const totalWithdrawable = availableBase + accruedProfit;
+  if (input.amountUsd > totalWithdrawable) {
+    return res.status(400).json({
+      error: `Withdrawal amount exceeds withdrawable balance of $${totalWithdrawable.toFixed(2)}. Note: principal locked in active investments cannot be withdrawn before maturity.`,
+      withdrawable: totalWithdrawable
+    });
   }
 
   const withdrawal = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {

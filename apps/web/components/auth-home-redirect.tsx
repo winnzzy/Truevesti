@@ -8,7 +8,10 @@ export function AuthHomeRedirect() {
   const router = useRouter();
 
   useEffect(() => {
-    if (readSession()) router.replace("/dashboard");
+    const session = readSession();
+    if (session) {
+      router.replace(session.user.role === "ADMIN" ? "/admin/dashboard" : "/dashboard");
+    }
   }, [router]);
 
   return null;

@@ -54,23 +54,31 @@ export function Nav() {
     }
   }
 
+  const isAdmin = session?.user.role === "ADMIN";
   const links = session
-    ? [
-      ["Dashboard", "/dashboard"],
-      ["Plans", "/plans"],
-      ["About", "/about"],
-      ["Contact", "/contact"],
-      ["Pricing", "/pricing"],
-      ...(session.user.role === "ADMIN" ? [["Admin", "/admin"]] : []),
-      ["FAQ", "/faq"],
-      ["Legal", "/legal"]
-    ]
+    ? isAdmin
+      ? [
+        ["Admin Console", "/admin/dashboard"],
+        ["Plans", "/plans"],
+        ["About", "/about"],
+        ["FAQ", "/faq"],
+        ["Legal", "/legal"]
+      ]
+      : [
+        ["Dashboard", "/dashboard"],
+        ["Plans", "/plans"],
+        ["About", "/about"],
+        ["Contact", "/contact"],
+        ["Pricing", "/pricing"],
+        ["FAQ", "/faq"],
+        ["Legal", "/legal"]
+      ]
     : publicLinks;
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-ink/85 backdrop-blur">
       <nav className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-4">
-        <Link href={session ? "/dashboard" : "/"} className="text-xl font-semibold tracking-wide text-white">
+        <Link href={session ? (isAdmin ? "/admin/dashboard" : "/dashboard") : "/"} className="text-xl font-semibold tracking-wide text-white">
           Truevesti
         </Link>
         <div className="hidden items-center gap-7 text-sm text-slate-300 md:flex">

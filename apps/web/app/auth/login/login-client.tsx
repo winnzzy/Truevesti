@@ -17,7 +17,7 @@ export function LoginClient() {
   useEffect(() => {
     const existing = readSession();
     if (existing?.accessToken) {
-      router.replace(existing.user.role === "ADMIN" ? "/admin" : "/dashboard");
+      router.replace(existing.user.role === "ADMIN" ? "/admin/dashboard" : "/dashboard");
       return;
     }
 
@@ -47,7 +47,7 @@ export function LoginClient() {
       });
 
       setStatus(session.message ?? "Signed in successfully");
-      router.push(session.user.role === "ADMIN" ? "/admin" : "/dashboard");
+      router.push(session.user.role === "ADMIN" ? "/admin/dashboard" : "/dashboard");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Sign in failed";
       setError(message);

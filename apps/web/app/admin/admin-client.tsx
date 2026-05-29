@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiRequest, clearSession, readSession, type AuthSession } from "@/lib/api";
 import { Card } from "@/components/card";
 import { Nav } from "@/components/nav";
@@ -186,6 +187,7 @@ function EmptyRow({ colSpan, message }: { colSpan: number; message: string }) {
 /* ─── Main Component ─── */
 
 export function AdminClient() {
+  const router = useRouter();
   const [session, setSession] = useState<AuthSession | null>(() => readSession());
   const [activeSection, setActiveSection] = useState<AdminSection>("overview");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -295,6 +297,17 @@ export function AdminClient() {
   }, [session]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Guard: redirect non-logged-in users to login, non-ADMIN to dashboard
+  useEffect(() => {
+    if (!isLoading) {
+      if (!session) {
+        router.replace("/auth/login");
+      } else if (session.user.role !== "ADMIN") {
+        router.replace("/dashboard");
+      }
+    }
+  }, [isLoading, session, router]);
 
   function signOut() {
     clearSession();
@@ -528,6 +541,26 @@ export function AdminClient() {
     return logs.filter((l) => !q || l.action.toLowerCase().includes(q) || l.entity.toLowerCase().includes(q));
   }, [logs, auditFilter]);
 
+  /* ─── Inline state that was incorrectly placed after early returns ─── */
+
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<{ id: string; email: string } | null>(null);
+
+  async function deleteUser(userId: string) {
+    setNotice("");
+    setError("");
+    try {
+      await apiRequest(`/admin/users/${userId}`, { method: "DELETE" });
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+      setNotice("User deleted successfully.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete user");
+    } finally {
+      setDeletingUserId(null);
+      setConfirmDeleteUser(null);
+    }
+  }
+
   /* ─── Loading / Auth gates ─── */
 
   if (isLoading) {
@@ -571,24 +604,6 @@ export function AdminClient() {
   }
 
   /* ─── Section Renderers ─── */
-
-  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
-  const [confirmDeleteUser, setConfirmDeleteUser] = useState<{ id: string; email: string } | null>(null);
-
-  async function deleteUser(userId: string) {
-    setNotice("");
-    setError("");
-    try {
-      await apiRequest(`/admin/users/${userId}`, { method: "DELETE" });
-      setUsers((prev) => prev.filter((u) => u.id !== userId));
-      setNotice("User deleted successfully.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete user");
-    } finally {
-      setDeletingUserId(null);
-      setConfirmDeleteUser(null);
-    }
-  }
 
   function renderOverview() {
     const stats = [

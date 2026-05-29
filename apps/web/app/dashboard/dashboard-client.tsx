@@ -248,7 +248,13 @@ export function DashboardClient({ initialSection = "overview" }: { initialSectio
   const headers = useMemo(() => session ? { Authorization: `Bearer ${session.accessToken}` } : undefined, [session]);
 
   useEffect(() => {
-    if (!session?.accessToken) router.replace("/auth/login");
+    if (!session?.accessToken) {
+      router.replace("/auth/login");
+      return;
+    }
+    if (session.user.role === "ADMIN") {
+      router.replace("/admin/dashboard");
+    }
   }, [router, session]);
 
   const load = useCallback(async () => {

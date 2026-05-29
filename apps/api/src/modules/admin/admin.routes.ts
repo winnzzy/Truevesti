@@ -323,32 +323,56 @@ adminRouter.get("/kyc", async (_req: Request, res: Response) => {
 });
 
 adminRouter.patch("/kyc/:id/decision", async (req: AuthRequest, res: Response) => {
+  const kycId = String(req.params.id);
+  console.log("KYC approval requested:", kycId);
+
   const input = z.object({
     status: z.enum(["VERIFIED", "REJECTED", "PENDING"]),
     reason: z.string().max(1000).optional()
   }).parse(req.body);
-  const check = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    const updated = await tx.kycCheck.update({ where: { id: String(req.params.id) }, data: input });
-    await tx.auditLog.create({
-      data: {
-        actorId: actorId(req),
-        action: "KYC_STATUS_UPDATED",
-        entity: "KycCheck",
-        entityId: updated.id,
-        metadata: { status: input.status, reason: input.reason },
-        ipAddress: req.ip
-      }
+
+  let kyc;
+  try {
+    kyc = await prisma.kycCheck.findUnique({ where: { id: kycId } });
+  } catch (err) {
+    console.error("KYC lookup error:", err);
+    return sendError(res, 500, "Failed to look up KYC record", { code: "KYC_LOOKUP_FAILED" });
+  }
+  if (!kyc) {
+    console.warn("KYC record not found for id:", kycId);
+    return sendError(res, 404, "KYC record not found", { code: "KYC_NOT_FOUND" });
+  }
+
+  try {
+    const check = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const updated = await tx.kycCheck.update({ where: { id: kycId }, data: input });
+      await tx.auditLog.create({
+        data: {
+          actorId: actorId(req),
+          action: "KYC_STATUS_UPDATED",
+          entity: "KycCheck",
+          entityId: updated.id,
+          metadata: { status: input.status, reason: input.reason },
+          ipAddress: req.ip
+        }
+      });
+      await tx.notification.create({
+        data: {
+          userId: updated.userId,
+          title: "KYC status updated",
+          body: `Your KYC status is now ${input.status}.`
+        }
+      });
+      return updated;
     });
-    await tx.notification.create({
-      data: {
-        userId: updated.userId,
-        title: "KYC status updated",
-        body: `Your KYC status is now ${input.status}.`
-      }
-    });
-    return updated;
-  });
-  res.json({ check });
+    res.json({ check });
+  } catch (err) {
+    console.error("KYC decision error:", err);
+    if (err instanceof Error && err.message.includes("Record to update not found")) {
+      return sendError(res, 404, "KYC record not found (concurrent delete?)", { code: "KYC_NOT_FOUND" });
+    }
+    return sendError(res, 500, "Failed to update KYC status", { code: "KYC_UPDATE_FAILED" });
+  }
 });
 
 adminRouter.get("/support/tickets", async (_req: Request, res: Response) => {

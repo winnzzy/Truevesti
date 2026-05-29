@@ -319,6 +319,136 @@ authRouter.post("/logout", async (req: Request, res: Response) => {
   }
 });
 
+/* ── Profile update endpoint ── */
+authRouter.patch("/profile", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const input = z.object({
+      firstName: z.string().trim().min(1, "First name is required").max(100).optional(),
+      lastName: z.string().trim().min(1, "Last name is required").max(100).optional(),
+      phone: z.string().trim().max(20).optional(),
+      country: z.string().trim().max(100).optional(),
+      timezone: z.string().trim().max(50).optional()
+    }).parse(req.body);
+
+    const userId = req.user!.id;
+
+    const profile = await prisma.profile.upsert({
+      where: { userId },
+      update: {
+        ...(input.firstName !== undefined && { firstName: input.firstName }),
+        ...(input.lastName !== undefined && { lastName: input.lastName }),
+        ...(input.country !== undefined && { country: input.country }),
+        ...(input.timezone !== undefined && { timezone: input.timezone })
+      },
+      create: {
+        userId,
+        firstName: input.firstName || "",
+        lastName: input.lastName || "",
+        country: input.country || null,
+        timezone: input.timezone || "Africa/Lagos"
+      }
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        actorId: userId,
+        action: "PROFILE_UPDATED",
+        entity: "Profile",
+        entityId: profile.userId,
+        ipAddress: req.ip
+      }
+    });
+
+    return res.json({ profile });
+  } catch (err) {
+    return handleRouteError(res, err);
+  }
+});
+
+/* ── Get full profile endpoint ── */
+authRouter.get("/profile", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        emailVerifiedAt: true,
+        phoneVerifiedAt: true,
+        createdAt: true,
+        profile: true
+      }
+    });
+
+    if (!user) return sendError(res, 404, "User not found", { code: "USER_NOT_FOUND" });
+
+    return res.json({ user });
+  } catch (err) {
+    return handleRouteError(res, err);
+  }
+});
+
+/* ── Change password endpoint ── */
+authRouter.post("/password/change", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const input = z.object({
+      currentPassword: z.string().min(1, "Current password is required"),
+      newPassword: passwordSchema
+    }).parse(req.body);
+
+    const userId = req.user!.id;
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+
+    if (!user.passwordHash || !(await verifyPassword(input.currentPassword, user.passwordHash))) {
+      return sendError(res, 400, "Current password is incorrect", { code: "INVALID_PASSWORD" });
+    }
+
+    const passwordHash = await hashPassword(input.newPassword);
+
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: { passwordHash }
+      });
+      await tx.auditLog.create({
+        data: {
+          actorId: userId,
+          action: "PASSWORD_CHANGED",
+          entity: "User",
+          entityId: userId,
+          ipAddress: req.ip
+        }
+      });
+      await tx.notification.create({
+        data: {
+          userId,
+          title: "Password changed",
+          body: "Your password was successfully changed. If you did not perform this action, contact support immediately."
+        }
+      });
+    });
+
+    return res.json({ message: "Password changed successfully" });
+  } catch (err) {
+    return handleRouteError(res, err);
+  }
+});
+
+/* ── Get user notifications ── */
+authRouter.get("/user/notifications", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const notifications = await prisma.notification.findMany({
+      where: { userId: req.user!.id },
+      orderBy: { createdAt: "desc" },
+      take: 50
+    });
+    return res.json({ notifications });
+  } catch (err) {
+    return handleRouteError(res, err);
+  }
+});
+
 authRouter.post("/password/forgot", otpRateLimiter, async (req: Request, res: Response) => {
   try {
     const input = emailSchema.parse(req.body);

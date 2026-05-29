@@ -5,6 +5,12 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { apiRequest } from "../../lib/api";
+import UserMenu from "../../components/user-menu";
+import ProfilePage from "../../components/dashboard/profile-page";
+import SettingsPage from "../../components/dashboard/settings-page";
+import KycPage from "../../components/dashboard/kyc-page";
+import SecurityPage from "../../components/dashboard/security-page";
+import NotificationsPage from "../../components/dashboard/notifications-page";
 
 /* ── Types matching actual backend API responses ── */
 interface Me { user: { id: string; email: string; role: string; emailVerified?: boolean; profile?: { firstName?: string | null; lastName?: string | null; country?: string | null } } }
@@ -130,7 +136,7 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
   const [referralCount, setReferralCount] = useState(0);
   const [referralEarnings, setReferralEarnings] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "investments" | "deposits" | "withdrawals" | "referrals" | "achievements">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "investments" | "deposits" | "withdrawals" | "referrals" | "achievements" | "profile" | "settings" | "kyc" | "security" | "notifications">("overview");
   const [showNotifications, setShowNotifications] = useState(false);
 
   /* ── Deposit form state ── */
@@ -323,11 +329,11 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
             <span className={`level-badge ${investorLevel.cls}`}>{investorLevel.icon} {investorLevel.name}</span>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => setShowNotifications(!showNotifications)} className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white">
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-              {notifications.length > 0 && <span className="notification-badge">{notifications.length}</span>}
-            </button>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-mint/30 to-gold/30 text-sm font-bold text-white">{(me?.user?.profile?.firstName?.[0] || me?.user?.email?.[0]?.toUpperCase() || "U")}</div>
+            <UserMenu
+              user={me?.user ? { id: me.user.id, email: me.user.email, role: me.user.role, emailVerified: me.user.emailVerified, profile: me.user.profile } : null}
+              initials={me?.user?.profile?.firstName?.[0] || me?.user?.email?.[0]?.toUpperCase() || "U"}
+              onNavigate={(section: string) => setActiveTab(section as typeof activeTab)}
+            />
           </div>
         </div>
 
@@ -783,6 +789,36 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                       ))}
                     </div>
                   </div>
+                </motion.div>
+              )}
+
+              {activeTab === "profile" && (
+                <motion.div key="profile" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <ProfilePage />
+                </motion.div>
+              )}
+
+              {activeTab === "settings" && (
+                <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <SettingsPage />
+                </motion.div>
+              )}
+
+              {activeTab === "kyc" && (
+                <motion.div key="kyc" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <KycPage />
+                </motion.div>
+              )}
+
+              {activeTab === "security" && (
+                <motion.div key="security" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <SecurityPage />
+                </motion.div>
+              )}
+
+              {activeTab === "notifications" && (
+                <motion.div key="notifications" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <NotificationsPage />
                 </motion.div>
               )}
             </AnimatePresence>

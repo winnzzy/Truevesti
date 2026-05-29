@@ -66,6 +66,42 @@ adminRouter.get("/overview", async (_req: Request, res: Response) => {
   res.json({ users, pendingWithdrawals, pendingDeposits, activeInvestments, pendingKyc, openTickets });
 });
 
+adminRouter.delete("/users/:id", async (req: AuthRequest, res: Response) => {
+  const targetId = String(req.params.id);
+  const adminId = actorId(req);
+
+  if (targetId === adminId) {
+    return sendError(res, 400, "Admins cannot delete their own account", { code: "CANNOT_DELETE_SELF" });
+  }
+
+  const target = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!target) {
+    return sendError(res, 404, "User not found", { code: "USER_NOT_FOUND" });
+  }
+
+  if (target.role === "ADMIN") {
+    return sendError(res, 403, "Cannot delete another admin account", { code: "CANNOT_DELETE_ADMIN" });
+  }
+
+  try {
+    const result = await deleteUserByEmail(target.email);
+    await prisma.auditLog.create({
+      data: {
+        actorId: adminId,
+        action: "ADMIN_DELETED_USER",
+        entity: "User",
+        entityId: targetId,
+        metadata: { email: target.email },
+        ipAddress: req.ip
+      }
+    });
+    return res.json(result);
+  } catch (err) {
+    console.error(err);
+    return sendError(res, 500, "Could not delete user", { code: "DELETE_FAILED" });
+  }
+});
+
 adminRouter.get("/users", async (_req: Request, res: Response) => {
   const users = await prisma.user.findMany({
     select: {

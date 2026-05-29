@@ -572,6 +572,24 @@ export function AdminClient() {
 
   /* ─── Section Renderers ─── */
 
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+  const [confirmDeleteUser, setConfirmDeleteUser] = useState<{ id: string; email: string } | null>(null);
+
+  async function deleteUser(userId: string) {
+    setNotice("");
+    setError("");
+    try {
+      await apiRequest(`/admin/users/${userId}`, { method: "DELETE" });
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+      setNotice("User deleted successfully.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete user");
+    } finally {
+      setDeletingUserId(null);
+      setConfirmDeleteUser(null);
+    }
+  }
+
   function renderOverview() {
     const stats = [
       { label: "Total Users", value: overview?.users ?? 0, icon: "👥" },
@@ -645,13 +663,27 @@ export function AdminClient() {
   function renderUsers() {
     return (
       <div className="space-y-6">
+        {confirmDeleteUser && (
+          <ConfirmDialog
+            open
+            title={`Delete ${confirmDeleteUser.email}?`}
+            message="This will permanently delete the user and all associated data including deposits, withdrawals, investments, and support tickets. This action cannot be undone."
+            confirmLabel="Delete User"
+            cancelLabel="Cancel"
+            onConfirm={() => {
+              setDeletingUserId(confirmDeleteUser.id);
+              deleteUser(confirmDeleteUser.id);
+            }}
+            onCancel={() => setConfirmDeleteUser(null)}
+          />
+        )}
         <SectionHeader title="Manage Users" subtitle={`${filteredUsers.length} accounts`}>
           <FilterBar value={userFilter} onChange={setUserFilter} placeholder="Search by name, email, or role..." />
         </SectionHeader>
         <Card className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="border-b border-white/10 text-xs uppercase tracking-[0.14em] text-slate-500">
-              <tr><th className="py-3">Name</th><th>Email</th><th>Role</th><th>Verified</th><th>Balance</th><th>Joined</th></tr>
+              <tr><th className="py-3">Name</th><th>Email</th><th>Role</th><th>Verified</th><th>Balance</th><th>Joined</th><th>Actions</th></tr>
             </thead>
             <tbody className="divide-y divide-white/10">
               {filteredUsers.length ? filteredUsers.map((user) => (
@@ -661,9 +693,20 @@ export function AdminClient() {
                   <td className="py-4 pr-4"><StatusBadge status={user.role} /></td>
                   <td className="py-4 pr-4">{user.emailVerifiedAt ? <StatusBadge status="VERIFIED" /> : <StatusBadge status="PENDING" />}</td>
                   <td className="py-4 pr-4 text-slate-300">{money(user.balance.availableUsd)}</td>
-                  <td className="py-4 text-slate-400">{new Date(user.createdAt).toLocaleDateString()}</td>
+                  <td className="py-4 pr-4 text-slate-400">{new Date(user.createdAt).toLocaleDateString()}</td>
+                  <td className="py-4">
+                    {user.role !== "ADMIN" ? (
+                      <button
+                        className="focus-ring rounded-md border border-red-300/40 px-3 py-2 text-xs font-semibold text-red-100 transition hover:bg-red-500/20 disabled:opacity-50"
+                        disabled={deletingUserId === user.id}
+                        onClick={() => setConfirmDeleteUser({ id: user.id, email: user.email })}
+                      >
+                        {deletingUserId === user.id ? "Deleting…" : "Delete"}
+                      </button>
+                    ) : <span className="text-xs text-slate-500">—</span>}
+                  </td>
                 </tr>
-              )) : <EmptyRow colSpan={6} message="No users match your search." />}
+              )) : <EmptyRow colSpan={7} message="No users match your search." />}
             </tbody>
           </table>
         </Card>

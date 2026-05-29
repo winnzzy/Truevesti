@@ -6,11 +6,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { apiRequest } from "../../lib/api";
 
-interface Me { user: { id: string; email: string; name: string; role: string } }
-interface Wallet { wallet: { id: string; balance: string } | null }
-interface Investment { id: string; plan: string; amount: string; profit: string; days: number; status: string; endDate: string; startDate: string; duration: number; dailyPercent: number; userId: string }
-interface Withdrawal { id: string; amount: string; status: string; createdAt: string; walletAddress: string }
-interface Deposit { id: string; amount: string; status: string; createdAt: string; txHash: string }
+/* ── Types matching actual backend API responses ── */
+interface Me { user: { id: string; email: string; role: string; emailVerified?: boolean; profile?: { firstName?: string | null; lastName?: string | null; country?: string | null } } }
+interface BalanceData { depositedUsd: string; activeInvestmentPrincipalUsd: string; completedReturnUsd: string; lockedWithdrawalUsd: string; availableUsd: string }
+interface InvestmentPlan { name: string; durationDays: number; estimatedYieldMin: string; estimatedYieldMax: string; riskLevel?: string; supportedAssets?: string[] }
+interface Investment { id: string; plan: InvestmentPlan; principalUsd: string; expectedReturnUsd: string; assetSymbol: string; status: string; startedAt: string; maturesAt: string; accruedInterestUsd?: string; currentAccruedValueUsd?: string; progressPercent?: number; daysElapsed?: number; daysRemaining?: number; dailyAccrualUsd?: string; projectedPayoutUsd?: string }
+interface Withdrawal { id: string; amountUsd: string; assetSymbol: string; network: string; destination: string; status: string; createdAt: string }
+interface Deposit { id: string; amountUsd: string; assetSymbol: string; network: string; status: string; depositAddress: string; txHash?: string; createdAt: string }
+interface KycCheck { id: string; status: string; provider: string; createdAt: string }
+interface ApiNotification { id: string; title: string; body: string; readAt: string | null; createdAt: string }
 
 function usd(v: string | number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(Number(v)); }
 function shortDate(d: string) { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
@@ -62,7 +66,7 @@ function PortfolioChart({ investments }: { investments: Investment[] }) {
   const chartData = useMemo(() => {
     const now = new Date();
     const days = range === "7d" ? 7 : range === "30d" ? 30 : range === "90d" ? 90 : 365;
-    const totalInvested = investments.reduce((s, i) => s + Number(i.amount), 0);
+    const totalInvested = investments.reduce((s, i) => s + Number(i.principalUsd), 0);
     return Array.from({ length: days }, (_, i) => {
       const d = new Date(now.getTime() - (days - i) * 86400000);
       return { date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), value: Math.round(totalInvested * (1 + 0.004 * i) * 100) / 100 };
@@ -108,10 +112,15 @@ function PortfolioChart({ investments }: { investments: Investment[] }) {
 
 export default function DashboardClient({ initialToken }: { initialToken?: string }) {
   const [me, setMe] = useState<Me | null>(null);
-  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [balance, setBalance] = useState<BalanceData | null>(null);
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
+  const [kycChecks, setKycChecks] = useState<KycCheck[]>([]);
+  const [apiNotifications, setApiNotifications] = useState<ApiNotification[]>([]);
+  const [referralCode, setReferralCode] = useState("");
+  const [referralCount, setReferralCount] = useState(0);
+  const [referralEarnings, setReferralEarnings] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"overview" | "investments" | "deposits" | "withdrawals" | "referrals" | "achievements">("overview");
   const [showNotifications, setShowNotifications] = useState(false);
@@ -120,28 +129,36 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
     if (initialToken) { localStorage.setItem("truevesti.session", JSON.stringify({ accessToken: initialToken, refreshToken: "", user: {} })); }
     Promise.all([
       apiRequest<Me>("/auth/me").then(setMe).catch(() => {}),
-      apiRequest<Wallet>("/wallet/me").then(setWallet).catch(() => {}),
-      apiRequest<Investment[]>("/investments/mine").then(setInvestments).catch(() => setInvestments([])),
-      apiRequest<Withdrawal[]>("/withdrawals/mine").then(setWithdrawals).catch(() => setWithdrawals([])),
-      apiRequest<Deposit[]>("/deposits/mine").then(setDeposits).catch(() => setDeposits([])),
+      apiRequest<{ balance: BalanceData }>("/payments/balance").then(d => setBalance(d.balance)).catch(() => {}),
+      apiRequest<{ investments: Investment[] }>("/investments").then(d => setInvestments(d.investments)).catch(() => setInvestments([])),
+      apiRequest<{ withdrawals: Withdrawal[] }>("/withdrawals").then(d => setWithdrawals(d.withdrawals)).catch(() => setWithdrawals([])),
+      apiRequest<{ deposits: Deposit[] }>("/payments/deposits").then(d => setDeposits(d.deposits)).catch(() => setDeposits([])),
+      apiRequest<{ checks: KycCheck[] }>("/kyc").then(d => setKycChecks(d.checks)).catch(() => setKycChecks([])),
+      apiRequest<{ notifications: ApiNotification[] }>("/notifications").then(d => setApiNotifications(d.notifications)).catch(() => setApiNotifications([])),
+      apiRequest<{ referralCode: string; referralCount: number; referralEarnings: string }>("/referrals").then(d => { setReferralCode(d.referralCode || ""); setReferralCount(d.referralCount || 0); setReferralEarnings(Number(d.referralEarnings) || 0); }).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, [initialToken]);
 
-  const balance = Number(wallet?.wallet?.balance ?? 0);
-  const totalInvested = investments.reduce((s, i) => s + Number(i.amount), 0);
-  const totalProfit = investments.reduce((s, i) => s + Number(i.profit), 0);
-  const activeInvestments = investments.filter(i => i.status === "active");
-  const pendingWithdrawals = withdrawals.filter(w => w.status === "pending").reduce((s, w) => s + Number(w.amount), 0);
-  const totalWithdrawn = withdrawals.filter(w => w.status === "completed").reduce((s, w) => s + Number(w.amount), 0);
-  const todayEarnings = activeInvestments.reduce((s, i) => s + (Number(i.amount) * (i.dailyPercent || 0.4) / 100), 0);
+  /* ── Computed values from real backend data ── */
+  const availableBalance = Number(balance?.availableUsd ?? 0);
+  const totalInvested = Number(balance?.activeInvestmentPrincipalUsd ?? 0);
+  const totalProfit = Number(balance?.completedReturnUsd ?? 0);
+  const totalPortfolio = Number(balance?.depositedUsd ?? 0);
+  const activeInvestments = investments.filter(i => i.status === "ACTIVE");
+  const pendingWithdrawals = withdrawals.filter(w => w.status === "PENDING" || w.status === "APPROVED").reduce((s, w) => s + Number(w.amountUsd), 0);
+  const totalWithdrawn = withdrawals.filter(w => w.status === "PAID").reduce((s, w) => s + Number(w.amountUsd), 0);
+  const todayEarnings = activeInvestments.reduce((s, i) => s + Number(i.dailyAccrualUsd || 0), 0);
   const weekEarnings = todayEarnings * 7;
   const monthEarnings = todayEarnings * 30;
   const investorLevel = getInvestorLevel(totalInvested);
+  const latestKycStatus = kycChecks.length > 0 ? kycChecks[0].status : "NOT_SUBMITTED";
+  const kycDisplayText = latestKycStatus === "VERIFIED" ? "Verified" : latestKycStatus === "PENDING" ? "Pending" : latestKycStatus === "REJECTED" ? "Rejected" : "Not Submitted";
 
   const notifications = [
-    ...deposits.slice(0, 3).map(d => ({ msg: `Deposit ${usd(d.amount)} ${d.status}`, time: d.createdAt, icon: "💰" })),
-    ...withdrawals.slice(0, 3).map(w => ({ msg: `Withdrawal ${usd(w.amount)} ${w.status}`, time: w.createdAt, icon: "🏦" })),
-    ...activeInvestments.slice(0, 2).map(i => ({ msg: `${i.plan} earning`, time: i.startDate, icon: "📈" })),
+    ...apiNotifications.slice(0, 5).map(n => ({ msg: `${n.title}: ${n.body}`, time: n.createdAt, icon: "🔔" })),
+    ...deposits.slice(0, 3).map(d => ({ msg: `Deposit ${usd(d.amountUsd)} ${d.status}`, time: d.createdAt, icon: "💰" })),
+    ...withdrawals.slice(0, 3).map(w => ({ msg: `Withdrawal ${usd(w.amountUsd)} ${w.status}`, time: w.createdAt, icon: "🏦" })),
+    ...activeInvestments.slice(0, 2).map(i => ({ msg: `${i.plan.name} earning ${usd(i.dailyAccrualUsd || 0)}/day`, time: i.startedAt, icon: "📈" })),
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 8);
 
   const tabs = [
@@ -173,7 +190,7 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
               {notifications.length > 0 && <span className="notification-badge">{notifications.length}</span>}
             </button>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-mint/30 to-gold/30 text-sm font-bold text-white">{me?.user?.name?.[0]?.toUpperCase() || "U"}</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-mint/30 to-gold/30 text-sm font-bold text-white">{(me?.user?.profile?.firstName?.[0] || me?.user?.email?.[0]?.toUpperCase() || "U")}</div>
           </div>
         </div>
 
@@ -198,18 +215,17 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                 <motion.div key="overview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
                     {[
-                      { label: "Total Portfolio", value: usd(balance + totalInvested + totalProfit), icon: "💵", accent: "mint", trend: { value: 12.5, positive: true } },
+                      { label: "Total Portfolio", value: usd(totalPortfolio), icon: "💵", accent: "mint" },
                       { label: "Today's Earnings", value: usd(todayEarnings), icon: "📈", accent: "gold" },
                       { label: "Active Investments", value: String(activeInvestments.length), icon: "📊", accent: "blue" },
                       { label: "Pending Withdrawals", value: usd(pendingWithdrawals), icon: "⏳", accent: "gold" },
-                      { label: "Verification", value: "Verified", icon: "✅", accent: "mint" },
+                      { label: "Verification", value: kycDisplayText, icon: latestKycStatus === "VERIFIED" ? "✅" : "⚠️", accent: "mint" },
                     ].map((s, i) => (
                       <motion.div key={s.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="glass-card group relative overflow-hidden p-5">
                         <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-gradient-to-br from-mint/20 to-mint/5 opacity-60 blur-2xl transition-opacity group-hover:opacity-100" />
                         <div className="relative">
                           <div className="flex items-center justify-between">
                             <span className="text-2xl">{s.icon}</span>
-                            {s.trend && <div className={`flex items-center gap-1 text-xs font-semibold ${s.trend.positive ? "text-emerald-400" : "text-red-400"}`}><svg className={`h-3 w-3 ${s.trend.positive ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>{Math.abs(s.trend.value)}%</div>}
                           </div>
                           <p className="mt-3 text-sm font-medium text-slate-400">{s.label}</p>
                           <p className="mt-1 text-xl font-bold text-white">{s.value}</p>
@@ -221,7 +237,7 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                   <PortfolioChart investments={investments} />
 
                   <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                    {[{ label: "Available Balance", value: usd(balance), icon: "💳" }, { label: "Invested Capital", value: usd(totalInvested), icon: "📊" }, { label: "Total Profit", value: usd(totalProfit), icon: "💰" }, { label: "Total Withdrawn", value: usd(totalWithdrawn), icon: "🏦" }].map((c, i) => (
+                    {[{ label: "Available Balance", value: usd(availableBalance), icon: "💳" }, { label: "Invested Capital", value: usd(totalInvested), icon: "📊" }, { label: "Total Profit", value: usd(totalProfit), icon: "💰" }, { label: "Total Withdrawn", value: usd(totalWithdrawn), icon: "🏦" }].map((c, i) => (
                       <motion.div key={c.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 + i * 0.1 }} className="glass-card group relative overflow-hidden p-5">
                         <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-gradient-to-br from-mint/10 to-transparent opacity-0 blur-2xl transition-opacity group-hover:opacity-100" />
                         <span className="text-2xl">{c.icon}</span>
@@ -245,15 +261,14 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                       <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-bold text-slate-300">Active Investments</h3><button onClick={() => setActiveTab("investments")} className="text-xs font-semibold text-mint hover:text-mint/80">View All →</button></div>
                       <div className="space-y-3">
                         {activeInvestments.slice(0, 3).map((inv, i) => {
-                          const totalDays = inv.duration || 30;
-                          const elapsed = Math.floor((Date.now() - new Date(inv.startDate).getTime()) / 86400000);
-                          const progress = Math.min((elapsed / totalDays) * 100, 100);
+                          const progress = inv.progressPercent || 0;
+                          const daysRemaining = inv.daysRemaining || 0;
                           return (
                             <motion.div key={inv.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.9 + i * 0.1 }} className="flex items-center gap-4 rounded-xl bg-white/[0.03] p-4">
                               <CircularProgress percent={progress} size={48} stroke={3} />
                               <div className="min-w-0 flex-1">
-                                <div className="flex items-center justify-between"><p className="text-sm font-semibold text-white">{inv.plan}</p><span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">Active</span></div>
-                                <div className="mt-1 flex items-center gap-4 text-xs text-slate-400"><span>{usd(inv.amount)} invested</span><span className="text-emerald-400">+{usd(inv.profit)} earned</span><span>{totalDays - elapsed} days left</span></div>
+                                <div className="flex items-center justify-between"><p className="text-sm font-semibold text-white">{inv.plan.name}</p><span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">Active</span></div>
+                                <div className="mt-1 flex items-center gap-4 text-xs text-slate-400"><span>{usd(inv.principalUsd)} invested</span><span className="text-emerald-400">+{usd(inv.accruedInterestUsd || 0)} earned</span><span>{daysRemaining} days left</span></div>
                                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5"><motion.div className="h-full rounded-full bg-gradient-to-r from-mint to-emerald-400 progress-bar-animated" initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 1.5, delay: 1 + i * 0.1 }} /></div>
                               </div>
                             </motion.div>
@@ -266,18 +281,18 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                   <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1 }} className="glass-card-static p-6">
                     <h3 className="mb-4 text-sm font-bold text-slate-300">Recent Activity</h3>
                     <div className="space-y-2">
-                      {[...deposits.slice(0, 3).map(d => ({ type: "Deposit", amount: d.amount, status: d.status, date: d.createdAt, icon: "💰" })), ...withdrawals.slice(0, 3).map(w => ({ type: "Withdrawal", amount: w.amount, status: w.status, date: w.createdAt, icon: "🏦" })), ...activeInvestments.slice(0, 2).map(i => ({ type: "Investment", amount: i.amount, status: i.status, date: i.startDate, icon: "📈" }))].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6).map((a, i) => (
+                      {[...deposits.slice(0, 3).map(d => ({ type: "Deposit", amount: d.amountUsd, status: d.status, date: d.createdAt, icon: "💰" })), ...withdrawals.slice(0, 3).map(w => ({ type: "Withdrawal", amount: w.amountUsd, status: w.status, date: w.createdAt, icon: "🏦" })), ...activeInvestments.slice(0, 2).map(i => ({ type: "Investment", amount: i.principalUsd, status: i.status, date: i.startedAt, icon: "📈" }))].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6).map((a, i) => (
                         <motion.div key={`${a.type}-${i}`} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 1.1 + i * 0.05 }} className="flex items-center gap-3 rounded-xl p-3 transition hover:bg-white/[0.03]">
                           <span className="text-xl">{a.icon}</span>
                           <div className="min-w-0 flex-1"><p className="text-sm font-medium text-white">{a.type}</p><p className="text-xs text-slate-500">{shortDate(a.date)}</p></div>
-                          <div className="text-right"><p className="text-sm font-semibold text-white">{usd(a.amount)}</p><span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${a.status === "completed" || a.status === "active" ? "status-approved" : "status-pending"}`}>{a.status}</span></div>
+                          <div className="text-right"><p className="text-sm font-semibold text-white">{usd(a.amount)}</p><span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${a.status === "CONFIRMED" || a.status === "PAID" || a.status === "ACTIVE" ? "status-approved" : a.status === "REJECTED" ? "status-rejected" : "status-pending"}`}>{a.status}</span></div>
                         </motion.div>
                       ))}
                     </div>
                   </motion.div>
 
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                    {[{ label: "Deposit", href: "/deposit", icon: "💰" }, { label: "Invest", href: "/plans", icon: "📈" }, { label: "Withdraw", href: "/withdraw", icon: "🏦" }, { label: "Referrals", href: "/referral", icon: "🤝" }].map((q, i) => (
+                    {[{ label: "Deposit", href: "/dashboard/deposit", icon: "💰" }, { label: "Invest", href: "/dashboard/investments", icon: "📈" }, { label: "Withdraw", href: "/dashboard/withdrawals", icon: "🏦" }, { label: "Referrals", href: "/dashboard/referrals", icon: "🤝" }].map((q, i) => (
                       <motion.div key={q.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.2 + i * 0.1 }}>
                         <Link href={q.href} className="glass-card group flex items-center gap-3 p-4">
                           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-mint/20 to-mint/5 text-lg">{q.icon}</div>
@@ -292,29 +307,34 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
               {activeTab === "investments" && (
                 <motion.div key="investments" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
                   <div className="grid grid-cols-3 gap-4">
-                    {[{ label: "Active", value: String(investments.filter(i => i.status === "active").length), color: "text-mint" }, { label: "Total Invested", value: usd(totalInvested), color: "text-white" }, { label: "Total Profit", value: usd(totalProfit), color: "text-emerald-400" }].map((s, i) => (
+                    {[{ label: "Active", value: String(activeInvestments.length), color: "text-mint" }, { label: "Total Invested", value: usd(totalInvested), color: "text-white" }, { label: "Total Profit", value: usd(totalProfit), color: "text-emerald-400" }].map((s, i) => (
                       <motion.div key={s.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="glass-card-static p-4 text-center"><p className="text-xs text-slate-400">{s.label}</p><p className={`mt-1 text-xl font-bold ${s.color}`}>{s.value}</p></motion.div>
                     ))}
                   </div>
                   {investments.length === 0 ? (
-                    <div className="glass-card-static p-12 text-center"><span className="text-4xl">📊</span><p className="mt-4 text-sm text-slate-400">No investments yet</p><Link href="/plans" className="mt-4 inline-block rounded-xl bg-mint/20 px-6 py-2.5 text-sm font-semibold text-mint hover:bg-mint/30">Browse Plans</Link></div>
+                    <div className="glass-card-static p-12 text-center"><span className="text-4xl">📊</span><p className="mt-4 text-sm text-slate-400">No investments yet</p><p className="mt-1 text-xs text-slate-500">Fund your account and start investing.</p></div>
                   ) : (
                     <div className="space-y-4">{investments.map((inv, i) => {
-                      const totalDays = inv.duration || 30;
-                      const elapsed = Math.floor((Date.now() - new Date(inv.startDate).getTime()) / 86400000);
-                      const progress = Math.min((elapsed / totalDays) * 100, 100);
-                      const daysLeft = Math.max(totalDays - elapsed, 0);
+                      const progress = inv.progressPercent || 0;
+                      const daysRemaining = inv.daysRemaining || 0;
+                      const daysElapsed = inv.daysElapsed || 0;
                       return (
                         <motion.div key={inv.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="glass-card group p-6">
                           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                             <CircularProgress percent={progress} size={64} stroke={4} />
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-3"><h3 className="text-lg font-bold text-white">{inv.plan}</h3><span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${inv.status === "active" ? "status-approved" : "status-completed"}`}>{inv.status}</span></div>
+                              <div className="flex items-center gap-3"><h3 className="text-lg font-bold text-white">{inv.plan.name}</h3><span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${inv.status === "ACTIVE" ? "status-approved" : inv.status === "COMPLETED" ? "status-completed" : "status-pending"}`}>{inv.status}</span></div>
                               <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
-                                <div><span className="text-slate-500">Invested: </span><span className="font-semibold text-white">{usd(inv.amount)}</span></div>
-                                <div><span className="text-slate-500">Profit: </span><span className="font-semibold text-emerald-400">+{usd(inv.profit)}</span></div>
-                                <div><span className="text-slate-500">Days Left: </span><span className="font-semibold text-white">{daysLeft}</span></div>
-                                <div><span className="text-slate-500">Est. Completion: </span><span className="font-semibold text-white">{shortDate(inv.endDate)}</span></div>
+                                <div><span className="text-slate-500">Invested: </span><span className="font-semibold text-white">{usd(inv.principalUsd)}</span></div>
+                                <div><span className="text-slate-500">Profit: </span><span className="font-semibold text-emerald-400">+{usd(inv.accruedInterestUsd || 0)}</span></div>
+                                <div><span className="text-slate-500">Days Left: </span><span className="font-semibold text-white">{daysRemaining}</span></div>
+                                <div><span className="text-slate-500">Est. Completion: </span><span className="font-semibold text-white">{shortDate(inv.maturesAt)}</span></div>
+                              </div>
+                              <div className="mt-1 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
+                                <div><span className="text-slate-500">Asset: </span><span className="font-semibold text-white">{inv.assetSymbol}</span></div>
+                                <div><span className="text-slate-500">Daily: </span><span className="font-semibold text-mint">{usd(inv.dailyAccrualUsd || 0)}</span></div>
+                                <div><span className="text-slate-500">Elapsed: </span><span className="font-semibold text-white">{daysElapsed}d</span></div>
+                                <div><span className="text-slate-500">Expected: </span><span className="font-semibold text-emerald-400">{usd(inv.expectedReturnUsd)}</span></div>
                               </div>
                               <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/5"><motion.div className="h-full rounded-full bg-gradient-to-r from-mint to-emerald-400 progress-bar-animated" initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 1.5, delay: 0.3 + i * 0.1 }} /></div>
                             </div>
@@ -329,14 +349,14 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
               {activeTab === "deposits" && (
                 <motion.div key="deposits" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
                   <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card-static p-6">
-                    <div className="flex items-center justify-between"><div><h3 className="text-sm font-bold text-slate-300">Total Deposited</h3><p className="mt-1 text-3xl font-bold text-white">{usd(deposits.reduce((s, d) => s + Number(d.amount), 0))}</p></div><Link href="/deposit" className="rounded-xl bg-mint/20 px-6 py-2.5 text-sm font-semibold text-mint hover:bg-mint/30">+ New Deposit</Link></div>
+                    <div className="flex items-center justify-between"><div><h3 className="text-sm font-bold text-slate-300">Total Deposited</h3><p className="mt-1 text-3xl font-bold text-white">{usd(deposits.reduce((s, d) => s + Number(d.amountUsd), 0))}</p></div></div>
                   </motion.div>
-                  {deposits.length === 0 ? <div className="glass-card-static p-12 text-center"><span className="text-4xl">💰</span><p className="mt-4 text-sm text-slate-400">No deposits yet</p></div> : (
+                  {deposits.length === 0 ? <div className="glass-card-static p-12 text-center"><span className="text-4xl">💰</span><p className="mt-4 text-sm text-slate-400">No deposits yet</p><p className="mt-1 text-xs text-slate-500">Make your first deposit to start investing.</p></div> : (
                     <div className="space-y-3">{deposits.map((dep, i) => (
                       <motion.div key={dep.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="glass-card flex items-center gap-4 p-4">
                         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-mint/10"><svg className="h-5 w-5 text-mint" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>
-                        <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-white">{usd(dep.amount)}</p><p className="text-xs text-slate-500">{shortDate(dep.createdAt)}</p></div>
-                        <span className={`rounded-full px-3 py-1 text-[10px] font-bold ${dep.status === "completed" ? "status-approved" : dep.status === "pending" ? "status-pending" : "status-processing"}`}>{dep.status}</span>
+                        <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-white">{usd(dep.amountUsd)}</p><p className="text-xs text-slate-500">{shortDate(dep.createdAt)} • {dep.assetSymbol} • {dep.network}</p></div>
+                        <span className={`rounded-full px-3 py-1 text-[10px] font-bold ${dep.status === "CONFIRMED" ? "status-approved" : dep.status === "PENDING" ? "status-pending" : dep.status === "REJECTED" ? "status-rejected" : "status-processing"}`}>{dep.status}</span>
                       </motion.div>
                     ))}</div>
                   )}
@@ -354,8 +374,8 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                     <div className="space-y-3">{withdrawals.map((w, i) => (
                       <motion.div key={w.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="glass-card flex items-center gap-4 p-4">
                         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gold/10"><svg className="h-5 w-5 text-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg></div>
-                        <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-white">{usd(w.amount)}</p><p className="text-xs text-slate-500">{shortDate(w.createdAt)} • {w.walletAddress?.slice(0, 8)}...</p></div>
-                        <span className={`rounded-full px-3 py-1 text-[10px] font-bold ${w.status === "completed" ? "status-approved" : w.status === "pending" ? "status-pending" : w.status === "processing" ? "status-processing" : "status-rejected"}`}>{w.status}</span>
+                        <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-white">{usd(w.amountUsd)}</p><p className="text-xs text-slate-500">{shortDate(w.createdAt)} • {w.assetSymbol} • {w.destination?.slice(0, 12)}...</p></div>
+                        <span className={`rounded-full px-3 py-1 text-[10px] font-bold ${w.status === "PAID" ? "status-approved" : w.status === "PENDING" ? "status-pending" : w.status === "APPROVED" ? "status-processing" : "status-rejected"}`}>{w.status}</span>
                       </motion.div>
                     ))}</div>
                   )}
@@ -367,14 +387,14 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                   <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card-static overflow-hidden p-6">
                     <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-gradient-to-br from-purple-500/10 to-transparent blur-3xl" />
                     <h3 className="text-lg font-bold text-white">Refer & Earn</h3>
-                    <p className="mt-1 text-sm text-slate-400">Share your link and earn commissions on every referral investment.</p>
+                    <p className="mt-1 text-sm text-slate-400">Share your code and earn commissions on every referral deposit.</p>
                     <div className="mt-4 flex gap-2">
-                      <input readOnly value={`https://truevesti.com/signup?ref=${typeof window !== "undefined" ? localStorage.getItem("referralCode") || "REF" : "REF"}`} className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white" />
-                      <button onClick={() => { navigator.clipboard.writeText(`https://truevesti.com/signup?ref=${localStorage.getItem("referralCode") || "REF"}`); }} className="rounded-xl bg-mint/20 px-6 py-2.5 text-sm font-semibold text-mint hover:bg-mint/30">Copy</button>
+                      <input readOnly value={referralCode || "No referral code available"} className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white font-mono" />
+                      <button onClick={() => { if (referralCode) navigator.clipboard.writeText(referralCode); }} className="rounded-xl bg-mint/20 px-6 py-2.5 text-sm font-semibold text-mint hover:bg-mint/30">Copy</button>
                     </div>
                   </motion.div>
-                  <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                    {[{ label: "Total Referrals", value: "0", icon: "👥" }, { label: "Active Referrals", value: "0", icon: "✅" }, { label: "Earnings", value: "$0.00", icon: "💰" }, { label: "Conversion Rate", value: "0%", icon: "📊" }].map((s, i) => (
+                  <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+                    {[{ label: "Total Referrals", value: String(referralCount), icon: "👥" }, { label: "Referral Earnings", value: usd(referralEarnings), icon: "💰" }, { label: "Your Code", value: referralCode || "N/A", icon: "🔑" }].map((s, i) => (
                       <motion.div key={s.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.1 }} className="glass-card-static p-4 text-center"><span className="text-2xl">{s.icon}</span><p className="mt-2 text-xs text-slate-400">{s.label}</p><p className="mt-1 text-xl font-bold text-white">{s.value}</p></motion.div>
                     ))}
                   </div>
@@ -407,7 +427,7 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                         { name: "First Withdrawal", icon: "🏦", desc: "Made your first withdrawal", unlocked: withdrawals.length > 0 },
                         { name: "Portfolio Builder", icon: "🔥", desc: "Portfolio reached $1,000", unlocked: totalInvested >= 1000 },
                         { name: "Diversified", icon: "📊", desc: "3+ active investments", unlocked: activeInvestments.length >= 3 },
-                        { name: "Diamond Hands", icon: "💎", desc: "30+ days active", unlocked: false },
+                        { name: "Verified", icon: "✅", desc: "Completed KYC verification", unlocked: latestKycStatus === "VERIFIED" },
                       ].map((a, i) => (
                         <motion.div key={a.name} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 + i * 0.1 }} className={`achievement-badge ${a.unlocked ? "unlocked" : "locked"}`}>
                           <span className="text-3xl">{a.icon}</span>

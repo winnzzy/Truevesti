@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Investment, InvestmentPlan, Prisma } from "@prisma/client";
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { getUserBalance } from "../../lib/balances.js";
@@ -86,7 +86,7 @@ withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRe
     where: { userId: req.user!.id, status: "ACTIVE" },
     include: { plan: true }
   });
-  const accruedProfit = activeInvestments.reduce((sum, inv) => {
+  const accruedProfit = activeInvestments.reduce((sum: number, inv: Investment & { plan: InvestmentPlan }) => {
     const snapshot = computeAccrualSnapshot({
       ...inv,
       principalUsd: Number(inv.principalUsd),

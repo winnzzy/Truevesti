@@ -61,6 +61,51 @@ for (const plan of plans) {
   }
 }
 
+// ── Seed CompanyWalletAddress records for all supported deposit combos ──
+const companyWallets = [
+  {
+    assetSymbol: "BTC",
+    network: "Bitcoin",
+    label: "BTC Company Wallet",
+    address: "PENDING_ADMIN_CONFIGURATION",
+    instructions: "Send only BTC on the Bitcoin network. Sending other assets may result in permanent loss.",
+  },
+  {
+    assetSymbol: "ETH",
+    network: "Ethereum",
+    label: "ETH Company Wallet",
+    address: "PENDING_ADMIN_CONFIGURATION",
+    instructions: "Send only ETH on the Ethereum network. Sending other assets may result in permanent loss.",
+  },
+  {
+    assetSymbol: "USDT",
+    network: "ERC20",
+    label: "USDT (ERC-20) Company Wallet",
+    address: "PENDING_ADMIN_CONFIGURATION",
+    instructions: "Send only USDT on the Ethereum (ERC-20) network. Sending other assets may result in permanent loss.",
+  },
+  {
+    assetSymbol: "USDT",
+    network: "TRC20",
+    label: "USDT (TRC-20) Company Wallet",
+    address: "PENDING_ADMIN_CONFIGURATION",
+    instructions: "Send only USDT on the Tron (TRC-20) network. Sending other assets may result in permanent loss.",
+  },
+];
+
+for (const wallet of companyWallets) {
+  await prisma.companyWalletAddress.upsert({
+    where: {
+      assetSymbol_network: {
+        assetSymbol: wallet.assetSymbol,
+        network: wallet.network,
+      },
+    },
+    update: {}, // don't overwrite admin-configured addresses
+    create: wallet,
+  });
+}
+
 if (adminEmail && adminPassword) {
   await prisma.user.upsert({
     where: { email: adminEmail },

@@ -14,6 +14,7 @@ import { notificationRouter } from "./modules/notifications/notification.routes.
 import { withdrawalRouter } from "./modules/withdrawals/withdrawal.routes.js";
 import { kycRouter } from "./modules/kyc/kyc.routes.js";
 import { ensureAdminUser } from "./lib/ensure-admin.js";
+import { ensureCompanyWallets } from "./lib/ensure-company-wallets.js";
 
 const logger = pino();
 const app = express();
@@ -53,7 +54,8 @@ try {
 }
 
 ensureAdminUser()
-  .catch((err) => logger.error({ err }, "ensureAdminUser failed"))
+  .then(() => ensureCompanyWallets())
+  .catch((err) => logger.error({ err }, "Startup routines failed"))
   .finally(() => {
     app.listen(env.PORT, () => {
       logger.info(`Truevesti API listening on ${env.PORT}`);

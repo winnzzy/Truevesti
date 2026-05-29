@@ -114,20 +114,21 @@ paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async 
   });
 
   let depositAddress: string;
-  let walletId: string;
+  let companyWalletId: string | null = null; // null when using crypto-provider (no DB record)
   let providerName = "manual-admin";
   let derivationPath: string | undefined;
 
   if (wallet) {
     depositAddress = wallet.address;
-    walletId = wallet.id;
+    companyWalletId = wallet.id;
   } else {
     // Use crypto-provider for real address generation
     try {
       const [provNetwork, provAsset] = mapToProviderParams(input.assetSymbol, input.network);
       const generated = await cryptoProvider.generateAddress(provNetwork, provAsset);
       depositAddress = generated.address;
-      walletId = `provider:${input.assetSymbol}:${input.network}`;
+      // NOTE: companyWalletId stays null — there is no CompanyWalletAddress record for this combo.
+      // Passing a synthetic ID here was the root cause of P2003 foreign key violations.
       providerName = generated.provider;
       derivationPath = generated.derivationPath;
     } catch (err) {
@@ -137,15 +138,37 @@ paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async 
     }
   }
 
+  // Verify companyWalletId actually exists in DB (defensive guard against P2003)
+  if (companyWalletId) {
+    const walletExists = await prisma.companyWalletAddress.findUnique({
+      where: { id: companyWalletId }
+    });
+    if (!walletExists) {
+      console.error(`[payments] CRITICAL: companyWalletId "${companyWalletId}" not found in CompanyWalletAddress table. Falling back to null.`);
+      return res.status(500).json({ error: "Company wallet configuration missing" });
+    }
+  }
+
+  // Logging payload before deposit creation
+  console.log("Deposit payload", {
+    companyWalletId,
+    userId: req.user!.id,
+    depositAddress,
+    assetSymbol: input.assetSymbol,
+    network: input.network,
+    providerName,
+    amountUsd: input.amountUsd,
+  });
+
   const deposit = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const created = await tx.deposit.create({
       data: {
         userId: req.user!.id,
-        companyWalletId: walletId,
+        companyWalletId,
         assetSymbol: input.assetSymbol,
         network: input.network,
         provider: providerName,
-        providerAddressId: walletId,
+        providerAddressId: companyWalletId,
         depositAddress,
         txHash: input.txHash,
         amountUsd: input.amountUsd,

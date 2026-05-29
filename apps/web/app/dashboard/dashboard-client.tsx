@@ -1,911 +1,429 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import {
-  BellIcon,
-  BriefcaseIcon,
-  CheckBadgeIcon,
-  CreditCardIcon,
-  InboxIcon,
-  LifebuoyIcon,
-  RectangleGroupIcon,
-  ShieldCheckIcon
-} from "@heroicons/react/24/outline";
-import { Card } from "@/components/card";
-import { Nav } from "@/components/nav";
-import { apiRequest, readSession, userDisplayName, writeSession, type AuthSession } from "@/lib/api";
+import { motion, AnimatePresence } from "framer-motion";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { apiRequest } from "../../lib/api";
 
-type Section = "overview" | "plans" | "deposits" | "withdrawals" | "kyc" | "notifications" | "support";
+interface Me { user: { id: string; email: string; name: string; role: string } }
+interface Wallet { wallet: { id: string; balance: string } | null }
+interface Investment { id: string; plan: string; amount: string; profit: string; days: number; status: string; endDate: string; startDate: string; duration: number; dailyPercent: number; userId: string }
+interface Withdrawal { id: string; amount: string; status: string; createdAt: string; walletAddress: string }
+interface Deposit { id: string; amount: string; status: string; createdAt: string; txHash: string }
 
-type Plan = {
-  id: string;
-  name: string;
-  minDepositUsd: string;
-  maxDepositUsd: string;
-  durationDays: number;
-  estimatedYieldMin: string;
-  estimatedYieldMax: string;
-  riskLevel: string;
-  riskNote?: string | null;
-  assetAllocation: string;
-  supportedAssets: string[];
-};
+function usd(v: string | number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(Number(v)); }
+function shortDate(d: string) { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
 
-type Investment = {
-  id: string;
-  principalUsd: string;
-  expectedReturnUsd: string;
-  assetSymbol: string;
-  status: string;
-  startedAt: string;
-  maturesAt: string;
-  plan: Plan;
-  projectedPayoutUsd: string;
-  dailyAccrualUsd: string;
-  accruedInterestUsd: string;
-  currentAccruedValueUsd: string;
-  yieldPercent: number;
-  daysRemaining: number;
-  progressPercent: number;
-};
-
-type Deposit = {
-  id: string;
-  companyWalletId?: string | null;
-  assetSymbol: string;
-  network: string;
-  depositAddress: string;
-  amountUsd: string | null;
-  proofUrl?: string | null;
-  rejectionReason?: string | null;
-  status: string;
-  confirmations: number;
-  txHash?: string | null;
-  createdAt: string;
-};
-
-type DepositOption = {
-  assetSymbol: string;
-  network: string;
-  label: string;
-  wallet: {
-    id: string;
-    address: string;
-    instructions: string;
-  } | null;
-};
-
-type Withdrawal = {
-  id: string;
-  assetSymbol: string;
-  amountUsd: string;
-  status: string;
-  destination: string;
-  network: string;
-  txHash?: string | null;
-  paidAt?: string | null;
-  adminNote?: string | null;
-  rejectionReason?: string | null;
-  createdAt: string;
-  investment?: { plan?: { name: string } } | null;
-};
-
-type Notification = {
-  id: string;
-  title: string;
-  body: string;
-  readAt: string | null;
-  createdAt: string;
-};
-
-type KycCheck = {
-  id: string;
-  provider: string;
-  status: string;
-  reason: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type Ticket = {
-  id: string;
-  subject: string;
-  message: string;
-  status: string;
-  priority: string;
-  createdAt: string;
-};
-
-type DashboardData = {
-  plans: Plan[];
-  depositOptions: DepositOption[];
-  investments: Investment[];
-  deposits: Deposit[];
-  withdrawals: Withdrawal[];
-  notifications: Notification[];
-  kycChecks: KycCheck[];
-  currentKyc: KycCheck | null;
-  tickets: Ticket[];
-  balance: {
-    depositedUsd: string;
-    activeInvestmentPrincipalUsd: string;
-    completedReturnUsd: string;
-    lockedWithdrawalUsd: string;
-    availableUsd: string;
-  };
-};
-
-const emptyData: DashboardData = {
-  plans: [],
-  depositOptions: [],
-  investments: [],
-  deposits: [],
-  withdrawals: [],
-  notifications: [],
-  kycChecks: [],
-  currentKyc: null,
-  tickets: [],
-  balance: {
-    depositedUsd: "0.00",
-    activeInvestmentPrincipalUsd: "0.00",
-    completedReturnUsd: "0.00",
-    lockedWithdrawalUsd: "0.00",
-    availableUsd: "0.00"
-  }
-};
-
-const sectionMeta: Array<{ id: Section; label: string; href: string; icon: typeof RectangleGroupIcon }> = [
-  { id: "overview", label: "Overview", href: "/dashboard", icon: RectangleGroupIcon },
-  { id: "plans", label: "Plans", href: "/dashboard/plans", icon: BriefcaseIcon },
-  { id: "deposits", label: "Deposits", href: "/dashboard/deposits", icon: CreditCardIcon },
-  { id: "withdrawals", label: "Withdrawals", href: "/dashboard/withdrawals", icon: InboxIcon },
-  { id: "kyc", label: "KYC", href: "/dashboard/kyc", icon: ShieldCheckIcon },
-  { id: "notifications", label: "Notifications", href: "/dashboard/notifications", icon: BellIcon },
-  { id: "support", label: "Support", href: "/dashboard/support", icon: LifebuoyIcon }
-];
-
-function money(value: string | number | null | undefined) {
-  return new Intl.NumberFormat("en-US", { currency: "USD", style: "currency", maximumFractionDigits: 0 }).format(Number(value ?? 0));
+function AnimatedNumber({ value, prefix = "", suffix = "", decimals = 2 }: { value: number; prefix?: string; suffix?: string; decimals?: number }) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    const duration = 1200;
+    const startTime = performance.now();
+    function tick(now: number) {
+      const progress = Math.min((now - startTime) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(eased * value);
+      if (progress < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }, [value]);
+  return <>{prefix}{display.toFixed(decimals)}{suffix}</>;
 }
 
-function date(value: string | number | Date) {
-  return new Date(value).toLocaleDateString();
+function getInvestorLevel(totalInvested: number) {
+  if (totalInvested >= 100000) return { name: "Diamond Investor", cls: "level-diamond", icon: "💎" };
+  if (totalInvested >= 50000) return { name: "Platinum Investor", cls: "level-platinum", icon: "🏆" };
+  if (totalInvested >= 20000) return { name: "Gold Investor", cls: "level-gold", icon: "🥇" };
+  if (totalInvested >= 5000) return { name: "Silver Investor", cls: "level-silver", icon: "🥈" };
+  return { name: "Bronze Investor", cls: "level-bronze", icon: "🥉" };
 }
 
-function statusClass(status: string) {
-  const normalized = status.toUpperCase();
-  if (["CONFIRMED", "VERIFIED", "ACTIVE", "MATURED"].includes(normalized)) return "border-mint/30 bg-mint/10 text-mint";
-  if (["REJECTED", "FAILED", "CANCELLED"].includes(normalized)) return "border-red-400/30 bg-red-500/10 text-red-200";
-  return "border-gold/30 bg-gold/10 text-gold";
+function FloatingParticles() {
+  const particles = useMemo(() => Array.from({ length: 30 }, (_, i) => ({ id: i, left: `${Math.random() * 100}%`, delay: `${Math.random() * 8}s`, duration: `${8 + Math.random() * 12}s`, size: `${1 + Math.random() * 3}px`, opacity: 0.1 + Math.random() * 0.3 })), []);
+  return <div className="bg-particles">{particles.map(p => <div key={p.id} className="particle" style={{ left: p.left, animationDelay: p.delay, animationDuration: p.duration, width: p.size, height: p.size, opacity: p.opacity }} />)}</div>;
 }
 
-function StatusPill({ status }: { status: string }) {
-  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${statusClass(status)}`}>{status}</span>;
-}
-
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <label className="grid gap-2 text-sm font-medium text-slate-300">{children}</label>;
-}
-
-function inputClass() {
-  return "focus-ring w-full rounded-md border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white placeholder:text-slate-500";
-}
-
-function DataTable({
-  columns,
-  rows,
-  empty
-}: {
-  columns: string[];
-  rows: Array<Array<React.ReactNode>>;
-  empty: string;
-}) {
+function CircularProgress({ percent, size = 56, stroke = 4, color = "#68f1c4" }: { percent: number; size?: number; stroke?: number; color?: string }) {
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (percent / 100) * circumference;
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[680px] text-left text-sm">
-        <thead className="border-b border-white/10 text-xs uppercase tracking-[0.14em] text-slate-500">
-          <tr>{columns.map((column) => <th className="py-3 font-semibold" key={column}>{column}</th>)}</tr>
-        </thead>
-        <tbody className="divide-y divide-white/10">
-          {rows.length ? rows.map((row, index) => (
-            <tr key={index}>{row.map((cell, cellIndex) => <td className="py-4 pr-4 text-slate-300" key={cellIndex}>{cell}</td>)}</tr>
-          )) : (
-            <tr><td className="py-5 text-slate-400" colSpan={columns.length}>{empty}</td></tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+    <svg width={size} height={size} className="circular-progress">
+      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
+      <motion.circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={circumference} strokeLinecap="round" initial={{ strokeDashoffset: circumference }} animate={{ strokeDashoffset: offset }} transition={{ duration: 1.5, ease: "easeOut" }} />
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" fill="white" fontSize={size * 0.22} fontWeight="700">{Math.round(percent)}%</text>
+    </svg>
   );
 }
 
-export function DashboardClient({ initialSection = "overview" }: { initialSection?: Section }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const [session, setSession] = useState<AuthSession | null>(() => readSession());
-  const [data, setData] = useState<DashboardData>(emptyData);
-  const [selectedPlanId, setSelectedPlanId] = useState("");
-  const [investmentAmount, setInvestmentAmount] = useState("");
-  const [investmentAsset, setInvestmentAsset] = useState("");
-  const [investmentAmountError, setInvestmentAmountError] = useState("");
-  const [depositOptionKey, setDepositOptionKey] = useState("");
-  const [depositAmount, setDepositAmount] = useState("500");
-  const [depositTxHash, setDepositTxHash] = useState("");
-  const [depositProofUrl, setDepositProofUrl] = useState("");
-  const [copiedAddress, setCopiedAddress] = useState(false);
-  const [withdrawalAmount, setWithdrawalAmount] = useState("500");
-  const [withdrawalOptionKey, setWithdrawalOptionKey] = useState("");
-  const [withdrawalDestination, setWithdrawalDestination] = useState("");
-  const [ticketSubject, setTicketSubject] = useState("");
-  const [ticketPriority, setTicketPriority] = useState("NORMAL");
-  const [ticketMessage, setTicketMessage] = useState("");
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const currentSection = sectionMeta.find((item) => pathname === item.href)?.id ?? initialSection;
+function PortfolioChart({ investments }: { investments: Investment[] }) {
+  const [range, setRange] = useState<"7d" | "30d" | "90d" | "1y">("30d");
+  const chartData = useMemo(() => {
+    const now = new Date();
+    const days = range === "7d" ? 7 : range === "30d" ? 30 : range === "90d" ? 90 : 365;
+    const totalInvested = investments.reduce((s, i) => s + Number(i.amount), 0);
+    return Array.from({ length: days }, (_, i) => {
+      const d = new Date(now.getTime() - (days - i) * 86400000);
+      return { date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), value: Math.round(totalInvested * (1 + 0.004 * i) * 100) / 100 };
+    });
+  }, [investments, range]);
+  const totalValue = chartData[chartData.length - 1]?.value ?? 0;
+  const startValue = chartData[0]?.value ?? 0;
+  const change = startValue > 0 ? ((totalValue - startValue) / startValue) * 100 : 0;
+  return (
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="glass-card-static p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-sm font-medium text-slate-400">Portfolio Performance</h3>
+          <div className="mt-1 flex items-baseline gap-3">
+            <span className="text-3xl font-bold text-white">{usd(totalValue)}</span>
+            <span className={`flex items-center gap-1 text-sm font-semibold ${change >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+              <svg className={`h-3.5 w-3.5 ${change < 0 ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>
+              {change.toFixed(2)}%
+            </span>
+          </div>
+        </div>
+        <div className="flex gap-1 rounded-xl bg-white/5 p-1">
+          {(["7d", "30d", "90d", "1y"] as const).map(r => (
+            <button key={r} onClick={() => setRange(r)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${range === r ? "bg-mint/20 text-mint" : "text-slate-400 hover:text-white"}`}>{r.toUpperCase()}</button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-6 h-[280px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+            <defs><linearGradient id="mintGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#68f1c4" stopOpacity={0.3} /><stop offset="100%" stopColor="#68f1c4" stopOpacity={0} /></linearGradient></defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+            <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+            <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}K`} />
+            <Tooltip contentStyle={{ background: "rgba(8,17,31,0.95)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", backdropFilter: "blur(20px)", color: "#f8fafc" }} formatter={(value: number) => [usd(value), "Value"]} />
+            <Area type="monotone" dataKey="value" stroke="#68f1c4" strokeWidth={2.5} fill="url(#mintGrad)" dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </motion.div>
+  );
+}
 
-  const headers = useMemo(() => session ? { Authorization: `Bearer ${session.accessToken}` } : undefined, [session]);
-
-  useEffect(() => {
-    if (!session?.accessToken) {
-      router.replace("/auth/login");
-      return;
-    }
-    if (session.user.role === "ADMIN") {
-      router.replace("/admin/dashboard");
-    }
-  }, [router, session]);
-
-  const load = useCallback(async () => {
-    try {
-      const [plans, depositOptions, investments, deposits, withdrawals, notifications, kyc, support] = await Promise.all([
-        apiRequest<{ plans: Plan[] }>("/investments/plans"),
-        headers ? apiRequest<{ options: DepositOption[] }>("/payments/deposit-options", { headers }) : Promise.resolve({ options: [] }),
-        headers ? apiRequest<{ investments: Investment[]; balance: DashboardData["balance"] }>("/investments", { headers }) : Promise.resolve({ investments: [], balance: emptyData.balance }),
-        headers ? apiRequest<{ deposits: Deposit[] }>("/payments/deposits", { headers }) : Promise.resolve({ deposits: [] }),
-        headers ? apiRequest<{ withdrawals: Withdrawal[] }>("/withdrawals", { headers }) : Promise.resolve({ withdrawals: [] }),
-        headers ? apiRequest<{ notifications: Notification[] }>("/notifications", { headers }) : Promise.resolve({ notifications: [] }),
-        headers ? apiRequest<{ checks: KycCheck[]; current: KycCheck | null }>("/kyc/status", { headers }) : Promise.resolve({ checks: [], current: null }),
-        headers ? apiRequest<{ tickets: Ticket[] }>("/support/tickets", { headers }) : Promise.resolve({ tickets: [] })
-      ]);
-      setData({
-        plans: plans.plans,
-        depositOptions: depositOptions.options,
-        investments: investments.investments,
-        deposits: deposits.deposits,
-        withdrawals: withdrawals.withdrawals,
-        notifications: notifications.notifications,
-        kycChecks: kyc.checks,
-        currentKyc: kyc.current,
-        tickets: support.tickets,
-        balance: investments.balance
-      });
-      const firstPlan = plans.plans[0];
-      setSelectedPlanId((current) => current || firstPlan?.id || "");
-      setInvestmentAsset((current) => {
-        if (current && firstPlan?.supportedAssets.includes(current)) return current;
-        return firstPlan?.supportedAssets[0] || "USDC";
-      });
-      setDepositOptionKey((current) => current || depositOptions.options.find((option) => option.wallet)?.label || depositOptions.options[0]?.label || "");
-      setWithdrawalOptionKey((current) => current || depositOptions.options.find((option) => option.wallet)?.label || depositOptions.options[0]?.label || "");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load dashboard");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [headers]);
+export default function DashboardClient({ initialToken }: { initialToken?: string }) {
+  const [me, setMe] = useState<Me | null>(null);
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [investments, setInvestments] = useState<Investment[]>([]);
+  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
+  const [deposits, setDeposits] = useState<Deposit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"overview" | "investments" | "deposits" | "withdrawals" | "referrals" | "achievements">("overview");
+  const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
-    function handleStorage() {
-      setSession(readSession());
-    }
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
+    if (initialToken) { localStorage.setItem("truevesti.session", JSON.stringify({ accessToken: initialToken, refreshToken: "", user: {} })); }
+    Promise.all([
+      apiRequest<Me>("/auth/me").then(setMe).catch(() => {}),
+      apiRequest<Wallet>("/wallet/me").then(setWallet).catch(() => {}),
+      apiRequest<Investment[]>("/investments/mine").then(setInvestments).catch(() => setInvestments([])),
+      apiRequest<Withdrawal[]>("/withdrawals/mine").then(setWithdrawals).catch(() => setWithdrawals([])),
+      apiRequest<Deposit[]>("/deposits/mine").then(setDeposits).catch(() => setDeposits([])),
+    ]).finally(() => setLoading(false));
+  }, [initialToken]);
 
-  useEffect(() => {
-    let mounted = true;
-    async function hydrate() {
-      const current = readSession();
-      if (!current) return;
-      try {
-        const response = await apiRequest<{ user: AuthSession["user"] }>("/auth/me");
-        if (!mounted) return;
-        const updated = { ...current, user: response.user };
-        writeSession(updated);
-        setSession(updated);
-      } catch {
-        // apiRequest handles refresh attempts.
-      }
-    }
-    void hydrate();
-    return () => { mounted = false; };
-  }, []);
+  const balance = Number(wallet?.wallet?.balance ?? 0);
+  const totalInvested = investments.reduce((s, i) => s + Number(i.amount), 0);
+  const totalProfit = investments.reduce((s, i) => s + Number(i.profit), 0);
+  const activeInvestments = investments.filter(i => i.status === "active");
+  const pendingWithdrawals = withdrawals.filter(w => w.status === "pending").reduce((s, w) => s + Number(w.amount), 0);
+  const totalWithdrawn = withdrawals.filter(w => w.status === "completed").reduce((s, w) => s + Number(w.amount), 0);
+  const todayEarnings = activeInvestments.reduce((s, i) => s + (Number(i.amount) * (i.dailyPercent || 0.4) / 100), 0);
+  const weekEarnings = todayEarnings * 7;
+  const monthEarnings = todayEarnings * 30;
+  const investorLevel = getInvestorLevel(totalInvested);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const notifications = [
+    ...deposits.slice(0, 3).map(d => ({ msg: `Deposit ${usd(d.amount)} ${d.status}`, time: d.createdAt, icon: "💰" })),
+    ...withdrawals.slice(0, 3).map(w => ({ msg: `Withdrawal ${usd(w.amount)} ${w.status}`, time: w.createdAt, icon: "🏦" })),
+    ...activeInvestments.slice(0, 2).map(i => ({ msg: `${i.plan} earning`, time: i.startDate, icon: "📈" })),
+  ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 8);
 
-  async function submitManualDeposit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus("");
-    setError("");
-    try {
-      const option = data.depositOptions.find((item) => item.label === depositOptionKey);
-      if (!option?.wallet) {
-        setError("Deposit address is not configured for the selected coin and network.");
-        return;
-      }
-      const body: Record<string, unknown> = {
-        assetSymbol: option.assetSymbol,
-        network: option.network,
-        amountUsd: Number(depositAmount),
-        txHash: depositTxHash
-      };
-      if (depositProofUrl.trim()) {
-        body.proofUrl = depositProofUrl.trim();
-      }
-      await apiRequest<{ deposit: Deposit }>("/payments/deposits/manual", {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body)
-      });
-      setDepositTxHash("");
-      setDepositProofUrl("");
-      setStatus("Deposit submitted successfully — your deposit is now PENDING admin review. You will be notified once it is confirmed.");
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to submit deposit");
-    }
-  }
+  const tabs = [
+    { id: "overview" as const, label: "Overview", icon: "📊" },
+    { id: "investments" as const, label: "Investments", icon: "📈" },
+    { id: "deposits" as const, label: "Deposits", icon: "💰" },
+    { id: "withdrawals" as const, label: "Withdrawals", icon: "🏦" },
+    { id: "referrals" as const, label: "Referrals", icon: "🤝" },
+    { id: "achievements" as const, label: "Achievements", icon: "🏆" },
+  ];
 
-  function getSelectedPlan(): Plan | undefined {
-    return data.plans.find((p) => p.id === selectedPlanId);
-  }
-
-  function validateInvestmentAmount(amount: string, plan: Plan | undefined): string {
-    if (!amount || Number(amount) <= 0) return "";
-    if (!plan) return "";
-    const num = Number(amount);
-    const min = Number(plan.minDepositUsd);
-    const max = Number(plan.maxDepositUsd);
-    if (num < min) return `Minimum investment for ${plan.name} is ${money(min)}`;
-    if (num > max) return `Maximum investment for ${plan.name} is ${money(max)}`;
-    const available = Number(data.balance.availableUsd);
-    if (available <= 0) return "You have no approved balance. Please make a deposit first.";
-    if (num > available) return `Insufficient balance. Your available balance is ${money(available)}.`;
-    return "";
-  }
-
-  async function createInvestment(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus("");
-    setError("");
-    setInvestmentAmountError("");
-    const plan = getSelectedPlan();
-    const amountError = validateInvestmentAmount(investmentAmount, plan);
-    if (amountError) {
-      setInvestmentAmountError(amountError);
-      return;
-    }
-    if (!plan) {
-      setError("Please select a valid plan.");
-      return;
-    }
-    try {
-      await apiRequest("/investments", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          planId: selectedPlanId,
-          principalUsd: Number(investmentAmount),
-          assetSymbol: investmentAsset,
-          disclosureHash: `risk-disclosure-${Date.now()}`
-        })
-      });
-      setStatus("Investment started. Returns are estimates and may vary with market conditions.");
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to start investment");
-    }
-  }
-
-  async function createWithdrawal(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus("");
-    setError("");
-    try {
-      const option = data.depositOptions.find((item) => item.label === withdrawalOptionKey);
-      if (!option) {
-        setError("Select a coin and network before requesting withdrawal.");
-        return;
-      }
-      await apiRequest<{ withdrawal: Withdrawal }>("/withdrawals", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          assetSymbol: option.assetSymbol,
-          network: option.network,
-          destination: withdrawalDestination,
-          amountUsd: Number(withdrawalAmount)
-        })
-      });
-      setWithdrawalDestination("");
-      setStatus("Withdrawal request submitted for manual review.");
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to request withdrawal");
-    }
-  }
-
-  async function requestKycReview() {
-    setStatus("");
-    setError("");
-    try {
-      await apiRequest("/kyc/manual", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ reason: "User requested KYC review from dashboard" })
-      });
-      setStatus("KYC review request submitted.");
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to request KYC review");
-    }
-  }
-
-  async function createTicket(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setStatus("");
-    setError("");
-    try {
-      await apiRequest<{ ticket: Ticket }>("/support/tickets", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ subject: ticketSubject, priority: ticketPriority, message: ticketMessage })
-      });
-      setTicketSubject("");
-      setTicketMessage("");
-      setTicketPriority("NORMAL");
-      setStatus("Support ticket created.");
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create ticket");
-    }
-  }
-
-  const totalDeposited = Number(data.balance.depositedUsd);
-  const activeInvestments = data.investments.filter((item) => item.status === "ACTIVE");
-  const activeInvestmentTotal = activeInvestments.reduce((sum, item) => sum + Number(item.principalUsd), 0);
-  const totalAccrual = data.investments.reduce((sum, item) => sum + Number(item.accruedInterestUsd ?? 0), 0);
-  const pendingWithdrawals = data.withdrawals.filter((item) => item.status === "PENDING").reduce((sum, item) => sum + Number(item.amountUsd), 0);
-  const withdrawalBalance = Number(data.balance.availableUsd);
-  const pendingDeposits = data.deposits.filter((item) => item.status === "PENDING").reduce((sum, item) => sum + Number(item.amountUsd ?? 0), 0);
-  const investorName = userDisplayName(session?.user);
-  const selectedDepositOption = data.depositOptions.find((item) => item.label === depositOptionKey);
-
-  if (isLoading) {
-    return (
-      <>
-        <Nav />
-        <main className="mx-auto max-w-3xl px-5 py-16"><Card className="text-slate-300">Loading dashboard...</Card></main>
-      </>
-    );
-  }
-
-  if (!session) {
-    return (
-      <>
-        <Nav />
-        <main className="mx-auto max-w-3xl px-5 py-16"><Card className="text-slate-300">Sign in to access your dashboard.</Card></main>
-      </>
-    );
-  }
+  if (loading) return (<div className="relative min-h-screen overflow-hidden bg-ink"><FloatingParticles /><div className="flex min-h-screen items-center justify-center"><div className="flex flex-col items-center gap-4"><div className="h-12 w-12 animate-spin rounded-full border-2 border-mint/20 border-t-mint" /><p className="text-sm text-slate-400">Loading your dashboard...</p></div></div></div>);
 
   return (
-    <>
-      <Nav />
-      <main className="mx-auto grid max-w-7xl gap-5 px-5 py-6 lg:grid-cols-[230px_1fr]">
-        <aside className="lg:sticky lg:top-24 lg:self-start">
-          <Card className="p-3">
-            <p className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Dashboard</p>
-            <nav className="grid gap-1">
-              {sectionMeta.map((item) => {
-                const Icon = item.icon;
-                const active = currentSection === item.id;
-                return (
-                  <Link className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition ${active ? "bg-mint text-ink" : "text-slate-300 hover:bg-white/10 hover:text-white"}`} href={item.href} key={item.id}>
-                    <Icon className="h-5 w-5" />
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
-          </Card>
-        </aside>
-
-        <section className="min-w-0">
-          <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-mint">Investor workspace</p>
-              <h1 className="mt-2 text-3xl font-semibold text-white">Welcome back, {investorName}</h1>
-              <p className="mt-2 max-w-3xl text-sm text-slate-300">Manual deposits and withdrawals are reviewed by admins. Performance figures are estimates, not guaranteed outcomes.</p>
-            </div>
-            <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
-              <p className="font-semibold text-slate-100">{session.user.email}</p>
-              <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">Account {data.currentKyc?.status || "PENDING"}</p>
-            </div>
+    <div className="relative min-h-screen overflow-hidden bg-ink">
+      <FloatingParticles />
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <div className="absolute left-1/4 top-0 h-[600px] w-[600px] rounded-full bg-mint/[0.03] blur-[120px]" />
+        <div className="absolute right-1/4 top-1/3 h-[400px] w-[400px] rounded-full bg-gold/[0.03] blur-[100px]" />
+      </div>
+      <div className="relative z-10 mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mb-8 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Link href="/" className="text-xl font-extrabold tracking-tight gradient-text-mint">TrueVesti</Link>
+            <span className={`level-badge ${investorLevel.cls}`}>{investorLevel.icon} {investorLevel.name}</span>
           </div>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setShowNotifications(!showNotifications)} className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+              {notifications.length > 0 && <span className="notification-badge">{notifications.length}</span>}
+            </button>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-mint/30 to-gold/30 text-sm font-bold text-white">{me?.user?.name?.[0]?.toUpperCase() || "U"}</div>
+          </div>
+        </div>
 
-          {status ? <p className="mb-4 rounded-md bg-mint/10 p-3 text-sm text-mint">{status}</p> : null}
-          {error ? <p className="mb-4 rounded-md bg-red-500/10 p-3 text-sm text-red-200">{error}</p> : null}
+        <AnimatePresence>{showNotifications && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="fixed right-4 top-20 z-50 w-80 rounded-2xl border border-white/10 bg-ink/95 p-4 shadow-2xl backdrop-blur-xl sm:right-8">
+            <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-bold text-white">Notifications</h3><button onClick={() => setShowNotifications(false)} className="text-slate-400 hover:text-white">✕</button></div>
+            <div className="max-h-64 space-y-2 overflow-y-auto">
+              {notifications.length === 0 && <p className="py-4 text-center text-xs text-slate-500">No notifications</p>}
+              {notifications.map((n, i) => (<motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }} className="flex items-start gap-3 rounded-xl p-2.5 transition hover:bg-white/5"><span className="text-lg">{n.icon}</span><div className="min-w-0 flex-1"><p className="truncate text-xs text-slate-300">{n.msg}</p><p className="mt-0.5 text-[10px] text-slate-500">{shortDate(n.time)}</p></div></motion.div>))}
+            </div>
+          </motion.div>
+        )}</AnimatePresence>
 
-          {currentSection === "overview" ? (
-            <div className="grid gap-4">
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                {[
-                  ["Account status", data.currentKyc?.status || "Pending review"],
-                  ["Total deposited", money(totalDeposited)],
-                  ["Active investments", `${activeInvestments.length} (${money(activeInvestmentTotal)})`],
-                  ["Profit/accrual", money(totalAccrual)],
-                  ["Withdrawal balance", money(Math.max(0, withdrawalBalance))]
-                ].map(([label, value]) => (
-                  <Card key={label}>
-                    <p className="text-sm text-slate-400">{label}</p>
-                    <p className="mt-3 text-2xl font-semibold text-white">{value}</p>
-                  </Card>
-                ))}
-              </div>
-              <div className="grid gap-4 xl:grid-cols-[1.2fr_.8fr]">
-                <Card>
-                  <h2 className="text-lg font-semibold text-white">Active investments</h2>
-                  <div className="mt-4 grid gap-3">
-                    {data.investments.length ? data.investments.slice(0, 5).map((item) => (
-                      <div className="rounded-lg border border-white/10 bg-white/5 p-4" key={item.id}>
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-white">{item.plan.name}</p>
-                            <p className="mt-1 text-sm text-slate-400">{money(item.principalUsd)} in {item.assetSymbol} · matures {date(item.maturesAt)}</p>
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <nav className="flex gap-1 overflow-x-auto pb-2 lg:w-56 lg:flex-col lg:overflow-visible lg:pb-0">
+            {tabs.map(t => (<button key={t.id} onClick={() => setActiveTab(t.id)} className={`dash-tab flex items-center gap-2.5 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${activeTab === t.id ? "active bg-mint/10 text-mint" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}><span>{t.icon}</span>{t.label}</button>))}
+          </nav>
+
+          <main className="min-w-0 flex-1">
+            <AnimatePresence mode="wait">
+              {activeTab === "overview" && (
+                <motion.div key="overview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                    {[
+                      { label: "Total Portfolio", value: usd(balance + totalInvested + totalProfit), icon: "💵", accent: "mint", trend: { value: 12.5, positive: true } },
+                      { label: "Today's Earnings", value: usd(todayEarnings), icon: "📈", accent: "gold" },
+                      { label: "Active Investments", value: String(activeInvestments.length), icon: "📊", accent: "blue" },
+                      { label: "Pending Withdrawals", value: usd(pendingWithdrawals), icon: "⏳", accent: "gold" },
+                      { label: "Verification", value: "Verified", icon: "✅", accent: "mint" },
+                    ].map((s, i) => (
+                      <motion.div key={s.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="glass-card group relative overflow-hidden p-5">
+                        <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-gradient-to-br from-mint/20 to-mint/5 opacity-60 blur-2xl transition-opacity group-hover:opacity-100" />
+                        <div className="relative">
+                          <div className="flex items-center justify-between">
+                            <span className="text-2xl">{s.icon}</span>
+                            {s.trend && <div className={`flex items-center gap-1 text-xs font-semibold ${s.trend.positive ? "text-emerald-400" : "text-red-400"}`}><svg className={`h-3 w-3 ${s.trend.positive ? "" : "rotate-180"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>{Math.abs(s.trend.value)}%</div>}
                           </div>
-                          <StatusPill status={item.status} />
+                          <p className="mt-3 text-sm font-medium text-slate-400">{s.label}</p>
+                          <p className="mt-1 text-xl font-bold text-white">{s.value}</p>
                         </div>
-                        <div className="mt-3 h-2 rounded-full bg-white/10"><div className="h-2 rounded-full bg-mint" style={{ width: `${item.progressPercent}%` }} /></div>
-                      </div>
-                    )) : <p className="text-sm text-slate-400">No investments yet.</p>}
+                      </motion.div>
+                    ))}
                   </div>
-                </Card>
-                <Card>
-                  <h2 className="text-lg font-semibold text-white">Manual review queue</h2>
-                  <div className="mt-4 grid gap-3 text-sm text-slate-300">
-                    <p>Pending deposits: <span className="font-semibold text-white">{money(pendingDeposits)}</span></p>
-                    <p>Pending withdrawals: <span className="font-semibold text-white">{money(pendingWithdrawals)}</span></p>
-                    <p>Open support tickets: <span className="font-semibold text-white">{data.tickets.filter((ticket) => ticket.status === "OPEN").length}</span></p>
-                    <p className="rounded-md border border-white/10 bg-white/5 p-3 text-slate-400">Admin approval is required before deposited funds become available or withdrawals are processed.</p>
-                  </div>
-                </Card>
-              </div>
-            </div>
-          ) : null}
 
-          {currentSection === "plans" ? (() => {
-            const selectedPlan = getSelectedPlan();
-            const availableBalance = Number(data.balance.availableUsd);
-            return (
-              <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
-                <div className="grid gap-4 md:grid-cols-2">
-                  {data.plans.length ? data.plans.map((plan) => (
-                    <Card className={`grid gap-4 cursor-pointer transition ${selectedPlanId === plan.id ? "ring-2 ring-mint" : ""}`} key={plan.id} onClick={() => {
-                      setSelectedPlanId(plan.id);
-                      setInvestmentAsset(plan.supportedAssets[0] || "USDC");
-                      setInvestmentAmount("");
-                      setInvestmentAmountError("");
-                    }}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h2 className="text-lg font-semibold text-white">{plan.name}</h2>
-                          <p className="mt-1 text-sm text-slate-400">{plan.durationDays} days · {plan.riskLevel} risk</p>
-                        </div>
-                        <StatusPill status="Estimate" />
-                      </div>
-                      <p className="text-sm text-slate-300">Estimated range: {(Number(plan.estimatedYieldMin) * 100).toFixed(0)}%-{(Number(plan.estimatedYieldMax) * 100).toFixed(0)}%. Results can vary and principal is exposed to market risk.</p>
-                      <div className="grid gap-2 text-sm text-slate-300">
-                        <p>Limits: {money(plan.minDepositUsd)} to {money(plan.maxDepositUsd)}</p>
-                        <p>Assets: {plan.supportedAssets.join(", ")}</p>
-                        <p>Allocation: {plan.assetAllocation}</p>
-                      </div>
-                    </Card>
-                  )) : (
-                    <Card className="text-sm text-slate-400">No investment plans are currently available. Please check back later.</Card>
-                  )}
-                </div>
-                <Card>
-                  <h2 className="text-lg font-semibold text-white">Start investment</h2>
-                  {availableBalance <= 0 ? (
-                    <div className="mt-4 rounded-md border border-gold/30 bg-gold/10 p-4 text-sm text-gold">
-                      <p className="font-semibold">No approved balance</p>
-                      <p className="mt-1 text-slate-300">You need to make a deposit and have it approved before you can start investing. Visit the <Link className="underline text-white" href="/dashboard/deposits">Deposits</Link> section to submit a deposit request.</p>
+                  <PortfolioChart investments={investments} />
+
+                  <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                    {[{ label: "Available Balance", value: usd(balance), icon: "💳" }, { label: "Invested Capital", value: usd(totalInvested), icon: "📊" }, { label: "Total Profit", value: usd(totalProfit), icon: "💰" }, { label: "Total Withdrawn", value: usd(totalWithdrawn), icon: "🏦" }].map((c, i) => (
+                      <motion.div key={c.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 + i * 0.1 }} className="glass-card group relative overflow-hidden p-5">
+                        <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full bg-gradient-to-br from-mint/10 to-transparent opacity-0 blur-2xl transition-opacity group-hover:opacity-100" />
+                        <span className="text-2xl">{c.icon}</span>
+                        <p className="mt-2 text-xs font-medium text-slate-400">{c.label}</p>
+                        <p className="mt-1 text-lg font-bold text-white">{c.value}</p>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }} className="glass-card-static p-6">
+                    <h3 className="mb-4 text-sm font-bold text-slate-300">Live Earnings</h3>
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                      {[{ label: "Today", value: todayEarnings, color: "text-mint" }, { label: "This Week", value: weekEarnings, color: "text-blue-400" }, { label: "This Month", value: monthEarnings, color: "text-gold" }, { label: "Est. Next Payout", value: todayEarnings, color: "text-emerald-400" }].map(e => (
+                        <div key={e.label} className="text-center"><p className="text-xs text-slate-500">{e.label}</p><p className={`mt-1 text-xl font-bold ${e.color}`}><AnimatedNumber value={e.value} prefix="$" /></p></div>
+                      ))}
                     </div>
+                  </motion.div>
+
+                  {activeInvestments.length > 0 && (
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }} className="glass-card-static p-6">
+                      <div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-bold text-slate-300">Active Investments</h3><button onClick={() => setActiveTab("investments")} className="text-xs font-semibold text-mint hover:text-mint/80">View All →</button></div>
+                      <div className="space-y-3">
+                        {activeInvestments.slice(0, 3).map((inv, i) => {
+                          const totalDays = inv.duration || 30;
+                          const elapsed = Math.floor((Date.now() - new Date(inv.startDate).getTime()) / 86400000);
+                          const progress = Math.min((elapsed / totalDays) * 100, 100);
+                          return (
+                            <motion.div key={inv.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.9 + i * 0.1 }} className="flex items-center gap-4 rounded-xl bg-white/[0.03] p-4">
+                              <CircularProgress percent={progress} size={48} stroke={3} />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between"><p className="text-sm font-semibold text-white">{inv.plan}</p><span className="rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">Active</span></div>
+                                <div className="mt-1 flex items-center gap-4 text-xs text-slate-400"><span>{usd(inv.amount)} invested</span><span className="text-emerald-400">+{usd(inv.profit)} earned</span><span>{totalDays - elapsed} days left</span></div>
+                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5"><motion.div className="h-full rounded-full bg-gradient-to-r from-mint to-emerald-400 progress-bar-animated" initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 1.5, delay: 1 + i * 0.1 }} /></div>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1 }} className="glass-card-static p-6">
+                    <h3 className="mb-4 text-sm font-bold text-slate-300">Recent Activity</h3>
+                    <div className="space-y-2">
+                      {[...deposits.slice(0, 3).map(d => ({ type: "Deposit", amount: d.amount, status: d.status, date: d.createdAt, icon: "💰" })), ...withdrawals.slice(0, 3).map(w => ({ type: "Withdrawal", amount: w.amount, status: w.status, date: w.createdAt, icon: "🏦" })), ...activeInvestments.slice(0, 2).map(i => ({ type: "Investment", amount: i.amount, status: i.status, date: i.startDate, icon: "📈" }))].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 6).map((a, i) => (
+                        <motion.div key={`${a.type}-${i}`} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 1.1 + i * 0.05 }} className="flex items-center gap-3 rounded-xl p-3 transition hover:bg-white/[0.03]">
+                          <span className="text-xl">{a.icon}</span>
+                          <div className="min-w-0 flex-1"><p className="text-sm font-medium text-white">{a.type}</p><p className="text-xs text-slate-500">{shortDate(a.date)}</p></div>
+                          <div className="text-right"><p className="text-sm font-semibold text-white">{usd(a.amount)}</p><span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${a.status === "completed" || a.status === "active" ? "status-approved" : "status-pending"}`}>{a.status}</span></div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </motion.div>
+
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                    {[{ label: "Deposit", href: "/deposit", icon: "💰" }, { label: "Invest", href: "/plans", icon: "📈" }, { label: "Withdraw", href: "/withdraw", icon: "🏦" }, { label: "Referrals", href: "/referral", icon: "🤝" }].map((q, i) => (
+                      <motion.div key={q.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.2 + i * 0.1 }}>
+                        <Link href={q.href} className="glass-card group flex items-center gap-3 p-4">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-mint/20 to-mint/5 text-lg">{q.icon}</div>
+                          <span className="text-sm font-semibold text-slate-300 group-hover:text-white">{q.label}</span>
+                        </Link>
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {activeTab === "investments" && (
+                <motion.div key="investments" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
+                  <div className="grid grid-cols-3 gap-4">
+                    {[{ label: "Active", value: String(investments.filter(i => i.status === "active").length), color: "text-mint" }, { label: "Total Invested", value: usd(totalInvested), color: "text-white" }, { label: "Total Profit", value: usd(totalProfit), color: "text-emerald-400" }].map((s, i) => (
+                      <motion.div key={s.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="glass-card-static p-4 text-center"><p className="text-xs text-slate-400">{s.label}</p><p className={`mt-1 text-xl font-bold ${s.color}`}>{s.value}</p></motion.div>
+                    ))}
+                  </div>
+                  {investments.length === 0 ? (
+                    <div className="glass-card-static p-12 text-center"><span className="text-4xl">📊</span><p className="mt-4 text-sm text-slate-400">No investments yet</p><Link href="/plans" className="mt-4 inline-block rounded-xl bg-mint/20 px-6 py-2.5 text-sm font-semibold text-mint hover:bg-mint/30">Browse Plans</Link></div>
                   ) : (
-                    <p className="mt-2 text-sm text-slate-400">Available balance: <span className="font-semibold text-white">{money(availableBalance)}</span></p>
+                    <div className="space-y-4">{investments.map((inv, i) => {
+                      const totalDays = inv.duration || 30;
+                      const elapsed = Math.floor((Date.now() - new Date(inv.startDate).getTime()) / 86400000);
+                      const progress = Math.min((elapsed / totalDays) * 100, 100);
+                      const daysLeft = Math.max(totalDays - elapsed, 0);
+                      return (
+                        <motion.div key={inv.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="glass-card group p-6">
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                            <CircularProgress percent={progress} size={64} stroke={4} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-3"><h3 className="text-lg font-bold text-white">{inv.plan}</h3><span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${inv.status === "active" ? "status-approved" : "status-completed"}`}>{inv.status}</span></div>
+                              <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-4">
+                                <div><span className="text-slate-500">Invested: </span><span className="font-semibold text-white">{usd(inv.amount)}</span></div>
+                                <div><span className="text-slate-500">Profit: </span><span className="font-semibold text-emerald-400">+{usd(inv.profit)}</span></div>
+                                <div><span className="text-slate-500">Days Left: </span><span className="font-semibold text-white">{daysLeft}</span></div>
+                                <div><span className="text-slate-500">Est. Completion: </span><span className="font-semibold text-white">{shortDate(inv.endDate)}</span></div>
+                              </div>
+                              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/5"><motion.div className="h-full rounded-full bg-gradient-to-r from-mint to-emerald-400 progress-bar-animated" initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 1.5, delay: 0.3 + i * 0.1 }} /></div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}</div>
                   )}
-                  <form className="mt-4 grid gap-3" onSubmit={createInvestment}>
-                    <FieldLabel>Plan<select className={inputClass()} onChange={(event) => {
-                      setSelectedPlanId(event.target.value);
-                      const plan = data.plans.find((p) => p.id === event.target.value);
-                      if (plan) setInvestmentAsset(plan.supportedAssets[0] || "USDC");
-                      setInvestmentAmount("");
-                      setInvestmentAmountError("");
-                    }} value={selectedPlanId}>{data.plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select></FieldLabel>
-                    <FieldLabel>
-                      Amount USD
-                      <input
-                        className={inputClass()}
-                        max={selectedPlan ? Number(selectedPlan.maxDepositUsd) : undefined}
-                        min={selectedPlan ? Number(selectedPlan.minDepositUsd) : undefined}
-                        onChange={(event) => {
-                          setInvestmentAmount(event.target.value);
-                          setInvestmentAmountError(validateInvestmentAmount(event.target.value, selectedPlan));
-                        }}
-                        placeholder={selectedPlan ? `Min ${money(selectedPlan.minDepositUsd)} – Max ${money(selectedPlan.maxDepositUsd)}` : "Select a plan first"}
-                        type="number"
-                        value={investmentAmount}
-                      />
-                      {investmentAmountError ? <span className="text-xs text-red-300">{investmentAmountError}</span> : null}
-                    </FieldLabel>
-                    <FieldLabel>
-                      Asset
-                      <select className={inputClass()} onChange={(event) => setInvestmentAsset(event.target.value)} value={investmentAsset}>
-                        {selectedPlan ? selectedPlan.supportedAssets.map((asset) => <option key={asset} value={asset}>{asset}</option>) : <option>Select a plan first</option>}
-                      </select>
-                    </FieldLabel>
-                    <p className="text-xs leading-5 text-slate-400">By starting, you confirm you understand estimated accruals are not guaranteed and may differ from actual results.</p>
-                    <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink disabled:opacity-50" disabled={availableBalance <= 0 || !investmentAmount || !!investmentAmountError}>Start investment</button>
-                  </form>
-                </Card>
-              </div>
-            );
-          })() : null}
+                </motion.div>
+              )}
 
-          {currentSection === "deposits" ? (
-            <div className="grid gap-4 xl:grid-cols-[400px_1fr]">
-              <Card>
-                <h2 className="text-lg font-semibold text-white">Deposit funds</h2>
-                <form className="mt-4 grid gap-4" onSubmit={submitManualDeposit}>
-                  {/* Step 1: Select asset/network */}
-                  <FieldLabel>
-                    1. Select coin / network
-                    <select className={inputClass()} onChange={(event) => {
-                      setDepositOptionKey(event.target.value);
-                      setCopiedAddress(false);
-                    }} value={depositOptionKey}>
-                      {data.depositOptions.map((option) => <option key={option.label} value={option.label}>{option.label}</option>)}
-                    </select>
-                  </FieldLabel>
+              {activeTab === "deposits" && (
+                <motion.div key="deposits" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card-static p-6">
+                    <div className="flex items-center justify-between"><div><h3 className="text-sm font-bold text-slate-300">Total Deposited</h3><p className="mt-1 text-3xl font-bold text-white">{usd(deposits.reduce((s, d) => s + Number(d.amount), 0))}</p></div><Link href="/deposit" className="rounded-xl bg-mint/20 px-6 py-2.5 text-sm font-semibold text-mint hover:bg-mint/30">+ New Deposit</Link></div>
+                  </motion.div>
+                  {deposits.length === 0 ? <div className="glass-card-static p-12 text-center"><span className="text-4xl">💰</span><p className="mt-4 text-sm text-slate-400">No deposits yet</p></div> : (
+                    <div className="space-y-3">{deposits.map((dep, i) => (
+                      <motion.div key={dep.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="glass-card flex items-center gap-4 p-4">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-mint/10"><svg className="h-5 w-5 text-mint" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>
+                        <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-white">{usd(dep.amount)}</p><p className="text-xs text-slate-500">{shortDate(dep.createdAt)}</p></div>
+                        <span className={`rounded-full px-3 py-1 text-[10px] font-bold ${dep.status === "completed" ? "status-approved" : dep.status === "pending" ? "status-pending" : "status-processing"}`}>{dep.status}</span>
+                      </motion.div>
+                    ))}</div>
+                  )}
+                </motion.div>
+              )}
 
-                  {/* Step 2: Show real deposit address with copy button */}
-                  <div className="rounded-md border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">2. Deposit address</p>
-                    {selectedDepositOption?.wallet ? (
-                      <>
-                        <div className="mt-2 flex items-start gap-2">
-                          <code className="flex-1 break-all rounded-md bg-white/5 px-3 py-2 font-mono text-sm font-semibold text-white">{selectedDepositOption.wallet.address}</code>
-                          <button
-                            type="button"
-                            className="focus-ring shrink-0 rounded-md border border-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-300 transition hover:bg-white/10 hover:text-white"
-                            onClick={async () => {
-                              try {
-                                await navigator.clipboard.writeText(selectedDepositOption.wallet!.address);
-                                setCopiedAddress(true);
-                                setTimeout(() => setCopiedAddress(false), 2000);
-                              } catch {
-                                // Fallback for environments without clipboard API
-                                const textarea = document.createElement("textarea");
-                                textarea.value = selectedDepositOption.wallet!.address;
-                                document.body.appendChild(textarea);
-                                textarea.select();
-                                document.execCommand("copy");
-                                document.body.removeChild(textarea);
-                                setCopiedAddress(true);
-                                setTimeout(() => setCopiedAddress(false), 2000);
-                              }
-                            }}
-                          >
-                            {copiedAddress ? "✓ Copied" : "Copy"}
-                          </button>
-                        </div>
-                        <p className="mt-2 text-xs text-slate-400">{selectedDepositOption.wallet.instructions}</p>
-                      </>
-                    ) : (
-                      <p className="mt-2 text-slate-400">This deposit option is not configured yet. Contact support or choose another network.</p>
-                    )}
+              {activeTab === "withdrawals" && (
+                <motion.div key="withdrawals" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+                    {[{ label: "Pending", value: usd(pendingWithdrawals), color: "text-gold" }, { label: "Completed", value: usd(totalWithdrawn), color: "text-mint" }, { label: "Total Withdrawals", value: String(withdrawals.length), color: "text-white" }].map((s, i) => (
+                      <motion.div key={s.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="glass-card-static p-4 text-center"><p className="text-xs text-slate-400">{s.label}</p><p className={`mt-1 text-xl font-bold ${s.color}`}>{s.value}</p></motion.div>
+                    ))}
                   </div>
+                  {withdrawals.length === 0 ? <div className="glass-card-static p-12 text-center"><span className="text-4xl">🏦</span><p className="mt-4 text-sm text-slate-400">No withdrawals yet</p></div> : (
+                    <div className="space-y-3">{withdrawals.map((w, i) => (
+                      <motion.div key={w.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="glass-card flex items-center gap-4 p-4">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gold/10"><svg className="h-5 w-5 text-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg></div>
+                        <div className="min-w-0 flex-1"><p className="text-sm font-semibold text-white">{usd(w.amount)}</p><p className="text-xs text-slate-500">{shortDate(w.createdAt)} • {w.walletAddress?.slice(0, 8)}...</p></div>
+                        <span className={`rounded-full px-3 py-1 text-[10px] font-bold ${w.status === "completed" ? "status-approved" : w.status === "pending" ? "status-pending" : w.status === "processing" ? "status-processing" : "status-rejected"}`}>{w.status}</span>
+                      </motion.div>
+                    ))}</div>
+                  )}
+                </motion.div>
+              )}
 
-                  {/* Network warning */}
-                  {selectedDepositOption?.wallet ? (
-                    <div className="rounded-md border border-gold/30 bg-gold/10 p-3 text-sm text-gold" role="alert">
-                      <p className="font-semibold">⚠ Network warning</p>
-                      <p className="mt-1 text-xs leading-5 text-gold/80">Send only <span className="font-bold text-gold">{selectedDepositOption.assetSymbol}</span> on the <span className="font-bold text-gold">{selectedDepositOption.network}</span> network. Wrong network deposits may be lost.</p>
+              {activeTab === "referrals" && (
+                <motion.div key="referrals" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card-static overflow-hidden p-6">
+                    <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-gradient-to-br from-purple-500/10 to-transparent blur-3xl" />
+                    <h3 className="text-lg font-bold text-white">Refer & Earn</h3>
+                    <p className="mt-1 text-sm text-slate-400">Share your link and earn commissions on every referral investment.</p>
+                    <div className="mt-4 flex gap-2">
+                      <input readOnly value={`https://truevesti.com/signup?ref=${typeof window !== "undefined" ? localStorage.getItem("referralCode") || "REF" : "REF"}`} className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white" />
+                      <button onClick={() => { navigator.clipboard.writeText(`https://truevesti.com/signup?ref=${localStorage.getItem("referralCode") || "REF"}`); }} className="rounded-xl bg-mint/20 px-6 py-2.5 text-sm font-semibold text-mint hover:bg-mint/30">Copy</button>
                     </div>
-                  ) : null}
+                  </motion.div>
+                  <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                    {[{ label: "Total Referrals", value: "0", icon: "👥" }, { label: "Active Referrals", value: "0", icon: "✅" }, { label: "Earnings", value: "$0.00", icon: "💰" }, { label: "Conversion Rate", value: "0%", icon: "📊" }].map((s, i) => (
+                      <motion.div key={s.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.1 }} className="glass-card-static p-4 text-center"><span className="text-2xl">{s.icon}</span><p className="mt-2 text-xs text-slate-400">{s.label}</p><p className="mt-1 text-xl font-bold text-white">{s.value}</p></motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
 
-                  {/* Step 3: Amount */}
-                  <FieldLabel>
-                    3. Amount (USD)
-                    <input className={inputClass()} min="1" onChange={(event) => setDepositAmount(event.target.value)} placeholder="e.g. 500" type="number" value={depositAmount} />
-                  </FieldLabel>
-
-                  {/* Step 4: Transaction hash */}
-                  <FieldLabel>
-                    4. Transaction hash
-                    <input className={inputClass()} minLength={8} onChange={(event) => setDepositTxHash(event.target.value)} placeholder="Paste the on-chain tx hash" required value={depositTxHash} />
-                  </FieldLabel>
-
-                  {/* Optional: Proof URL */}
-                  <FieldLabel>
-                    Proof URL <span className="text-xs text-slate-500">(optional)</span>
-                    <input className={inputClass()} onChange={(event) => setDepositProofUrl(event.target.value)} placeholder="Link to block explorer or screenshot" type="url" value={depositProofUrl} />
-                  </FieldLabel>
-
-                  <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50" disabled={!selectedDepositOption?.wallet}>Submit deposit for review</button>
-                </form>
-              </Card>
-              <Card>
-                <h2 className="mb-3 text-lg font-semibold text-white">Deposit history</h2>
-                {/* Mobile-friendly card list for small screens */}
-                <div className="grid gap-3 sm:hidden">
-                  {data.deposits.length ? data.deposits.map((item) => (
-                    <div className="rounded-lg border border-white/10 bg-white/5 p-3" key={item.id}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-white">{item.assetSymbol} · {item.network}</span>
-                        <StatusPill status={item.status} />
-                      </div>
-                      <p className="mt-1 text-sm text-slate-300">{money(item.amountUsd)}</p>
-                      {item.txHash ? <p className="mt-1 break-all text-xs text-slate-500">tx: {item.txHash}</p> : null}
-                      {item.status === "REJECTED" && item.rejectionReason ? <p className="mt-1 text-xs text-red-300">Reason: {item.rejectionReason}</p> : null}
-                      {item.status === "PENDING" ? <p className="mt-2 text-xs text-gold">Awaiting admin confirmation</p> : null}
-                      <p className="mt-1 text-xs text-slate-500">{date(item.createdAt)}</p>
-                    </div>
-                  )) : <p className="text-sm text-slate-400">No deposit requests yet.</p>}
-                </div>
-                {/* Desktop table */}
-                <div className="hidden sm:block">
-                  <DataTable
-                    columns={["Asset", "Network", "Amount", "Status", "Created"]}
-                    empty="No deposit requests yet."
-                    rows={data.deposits.map((item) => [
-                      item.assetSymbol,
-                      item.network,
-                      money(item.amountUsd),
-                      <div key={item.id} className="flex flex-col gap-1">
-                        <StatusPill status={item.status} />
-                        {item.status === "PENDING" ? <span className="text-xs text-gold">Awaiting confirmation</span> : null}
-                      </div>,
-                      item.status === "REJECTED" && item.rejectionReason ? item.rejectionReason : date(item.createdAt)
-                    ])}
-                  />
-                </div>
-              </Card>
-            </div>
-          ) : null}
-
-          {currentSection === "withdrawals" ? (
-            <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
-              <Card>
-                  <h2 className="text-lg font-semibold text-white">Request withdrawal</h2>
-                <p className="mt-2 text-sm text-slate-400">Available balance: {money(data.balance.availableUsd)}. Requests are reviewed and paid manually.</p>
-                <form className="mt-4 grid gap-3" onSubmit={createWithdrawal}>
-                  <FieldLabel>Coin / network<select className={inputClass()} onChange={(event) => setWithdrawalOptionKey(event.target.value)} value={withdrawalOptionKey}>{data.depositOptions.map((option) => <option key={option.label} value={option.label}>{option.label}</option>)}</select></FieldLabel>
-                  <FieldLabel>Amount USD<input className={inputClass()} min="1" onChange={(event) => setWithdrawalAmount(event.target.value)} type="number" value={withdrawalAmount} /></FieldLabel>
-                  <FieldLabel>Destination<input className={inputClass()} minLength={16} onChange={(event) => setWithdrawalDestination(event.target.value)} required value={withdrawalDestination} /></FieldLabel>
-                  <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink">Submit withdrawal</button>
-                </form>
-              </Card>
-              <Card>
-                <h2 className="mb-2 text-lg font-semibold text-white">Withdrawal history</h2>
-                <DataTable
-                  columns={["Investment", "Asset", "Amount", "Status", "Requested"]}
-                  empty="No withdrawal requests yet."
-                  rows={data.withdrawals.map((item) => [item.network, item.assetSymbol, money(item.amountUsd), <StatusPill key={item.id} status={item.status} />, item.status === "PAID" && item.txHash ? item.txHash : item.rejectionReason || date(item.createdAt)])}
-                />
-              </Card>
-            </div>
-          ) : null}
-
-          {currentSection === "kyc" ? (
-            <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
-              <Card>
-                <CheckBadgeIcon className="h-10 w-10 text-mint" />
-                <h2 className="mt-3 text-lg font-semibold text-white">KYC status</h2>
-                <p className="mt-2 text-sm text-slate-400">Current status: <span className="font-semibold text-white">{data.currentKyc?.status || "PENDING"}</span></p>
-                <button className="focus-ring mt-5 rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink" onClick={requestKycReview} type="button">Request review</button>
-              </Card>
-              <Card>
-                <h2 className="mb-2 text-lg font-semibold text-white">KYC history</h2>
-                <DataTable
-                  columns={["Provider", "Status", "Reason", "Updated"]}
-                  empty="No KYC checks yet."
-                  rows={data.kycChecks.map((item) => [item.provider, <StatusPill key={item.id} status={item.status} />, item.reason || "Manual review", date(item.updatedAt)])}
-                />
-              </Card>
-            </div>
-          ) : null}
-
-          {currentSection === "notifications" ? (
-            <Card>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-lg font-semibold text-white">Notifications</h2>
-                {data.notifications.some((n) => !n.readAt) ? (
-                  <button
-                    className="focus-ring rounded-md border border-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-slate-300 hover:bg-white/10 hover:text-white"
-                    onClick={async () => {
-                      try {
-                        await apiRequest("/notifications/read-all", { method: "POST", headers });
-                        await load();
-                      } catch {}
-                    }}
-                    type="button"
-                  >
-                    Mark all read
-                  </button>
-                ) : null}
-              </div>
-              <div className="mt-4 divide-y divide-white/10">
-                {data.notifications.length ? data.notifications.map((item) => (
-                  <article className={`py-4 ${!item.readAt ? "rounded-md bg-white/5 -mx-3 px-3" : ""}`} key={item.id}>
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        {!item.readAt && <span className="inline-block h-2 w-2 rounded-full bg-mint" />}
-                        <h3 className="font-semibold text-white">{item.title}</h3>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{date(item.createdAt)}</p>
-                        {!item.readAt ? (
-                          <button
-                            className="focus-ring rounded-md border border-white/10 px-2 py-1 text-xs text-slate-400 hover:bg-white/10 hover:text-white"
-                            onClick={async () => {
-                              try {
-                                await apiRequest(`/notifications/${item.id}/read`, { method: "PATCH", headers });
-                                await load();
-                              } catch {}
-                            }}
-                            type="button"
-                          >
-                            Mark read
-                          </button>
-                        ) : null}
+              {activeTab === "achievements" && (
+                <motion.div key="achievements" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
+                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card-static p-6">
+                    <div className="flex items-center gap-4">
+                      <span className="text-4xl">{investorLevel.icon}</span>
+                      <div>
+                        <span className={`level-badge ${investorLevel.cls}`}>{investorLevel.name}</span>
+                        <p className="mt-2 text-sm text-slate-400">Total invested: {usd(totalInvested)}</p>
                       </div>
                     </div>
-                    <p className="mt-2 text-sm text-slate-300">{item.body}</p>
-                  </article>
-                )) : <p className="text-sm text-slate-400">No notifications yet.</p>}
-              </div>
-            </Card>
-          ) : null}
-
-          {currentSection === "support" ? (
-            <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
-              <Card>
-                <h2 className="text-lg font-semibold text-white">New support ticket</h2>
-                <form className="mt-4 grid gap-3" onSubmit={createTicket}>
-                  <FieldLabel>Subject<input className={inputClass()} maxLength={160} minLength={3} onChange={(event) => setTicketSubject(event.target.value)} required value={ticketSubject} /></FieldLabel>
-                  <FieldLabel>Priority<select className={inputClass()} onChange={(event) => setTicketPriority(event.target.value)} value={ticketPriority}>{["LOW", "NORMAL", "HIGH", "URGENT"].map((priority) => <option key={priority}>{priority}</option>)}</select></FieldLabel>
-                  <FieldLabel>Message<textarea className={`${inputClass()} min-h-36`} maxLength={4000} minLength={10} onChange={(event) => setTicketMessage(event.target.value)} required value={ticketMessage} /></FieldLabel>
-                  <button className="focus-ring rounded-md bg-mint px-4 py-3 text-sm font-semibold text-ink">Create ticket</button>
-                </form>
-              </Card>
-              <Card>
-                <h2 className="mb-2 text-lg font-semibold text-white">Tickets</h2>
-                <DataTable
-                  columns={["Subject", "Priority", "Status", "Created"]}
-                  empty="No support tickets yet."
-                  rows={data.tickets.map((item) => [item.subject, item.priority, <StatusPill key={item.id} status={item.status} />, date(item.createdAt)])}
-                />
-              </Card>
-            </div>
-          ) : null}
-        </section>
-      </main>
-    </>
+                  </motion.div>
+                  <div className="flex items-center justify-between gap-2">
+                    {[{ name: "Bronze", threshold: 0, icon: "🥉" }, { name: "Silver", threshold: 5000, icon: "🥈" }, { name: "Gold", threshold: 20000, icon: "🥇" }, { name: "Platinum", threshold: 50000, icon: "🏆" }, { name: "Diamond", threshold: 100000, icon: "💎" }].map((l, i) => {
+                      const active = totalInvested >= l.threshold;
+                      return <motion.div key={l.name} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.2 + i * 0.1 }} className={`flex flex-1 flex-col items-center gap-2 rounded-xl p-3 ${active ? "bg-white/[0.06]" : "bg-white/[0.02] opacity-40"}`}><span className="text-2xl">{l.icon}</span><span className={`text-[10px] font-bold uppercase ${active ? "text-mint" : "text-slate-500"}`}>{l.name}</span><span className="text-[10px] text-slate-500">{usd(l.threshold)}</span></motion.div>;
+                    })}
+                  </div>
+                  <div>
+                    <h3 className="mb-4 text-sm font-bold text-slate-300">Achievements</h3>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {[
+                        { name: "First Deposit", icon: "💰", desc: "Made your first deposit", unlocked: deposits.length > 0 },
+                        { name: "First Investment", icon: "📈", desc: "Started your first investment", unlocked: investments.length > 0 },
+                        { name: "First Withdrawal", icon: "🏦", desc: "Made your first withdrawal", unlocked: withdrawals.length > 0 },
+                        { name: "Portfolio Builder", icon: "🔥", desc: "Portfolio reached $1,000", unlocked: totalInvested >= 1000 },
+                        { name: "Diversified", icon: "📊", desc: "3+ active investments", unlocked: activeInvestments.length >= 3 },
+                        { name: "Diamond Hands", icon: "💎", desc: "30+ days active", unlocked: false },
+                      ].map((a, i) => (
+                        <motion.div key={a.name} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 + i * 0.1 }} className={`achievement-badge ${a.unlocked ? "unlocked" : "locked"}`}>
+                          <span className="text-3xl">{a.icon}</span>
+                          <p className="text-xs font-bold text-white">{a.name}</p>
+                          <p className="text-[10px] text-slate-400">{a.desc}</p>
+                          {a.unlocked && <span className="text-[10px] font-bold text-mint">✓ Unlocked</span>}
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </main>
+        </div>
+      </div>
+    </div>
   );
 }

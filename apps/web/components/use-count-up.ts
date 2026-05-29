@@ -1,56 +1,97 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-export function useCountUp(end: number, duration = 2000, startOnMount = true) {
-  const [count, setCount] = useState(0);
-  const [started, setStarted] = useState(false);
-
-  useEffect(() => {
-    if (!startOnMount || started) return;
-    setStarted(true);
-  }, [startOnMount, started]);
+export function useCountUp(target: number, duration = 1200, decimals = 0) {
+  const [value, setValue] = useState(0);
+  const frameRef = useRef<number>(0);
+  const startRef = useRef<number>(0);
 
   useEffect(() => {
-    if (!started) return;
-    let startTime: number | null = null;
-    let raf: number;
+    if (target === 0) {
+      setValue(0);
+      return;
+    }
 
-    function step(timestamp: number) {
-      if (!startTime) startTime = timestamp;
-      const progress = Math.min((timestamp - startTime) / duration, 1);
+    startRef.current = performance.now();
+
+    function tick(now: number) {
+      const elapsed = now - startRef.current;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease out cubic
       const eased = 1 - Math.pow(1 - progress, 3);
-      setCount(Math.floor(eased * end));
+      const current = eased * target;
+      setValue(Number(current.toFixed(decimals)));
+
       if (progress < 1) {
-        raf = requestAnimationFrame(step);
+        frameRef.current = requestAnimationFrame(tick);
       }
     }
 
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [started, end, duration]);
+    frameRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameRef.current);
+  }, [target, duration, decimals]);
 
-  return count;
+  return value;
 }
 
-export function useInView(threshold = 0.2) {
-  const [ref, setRef] = useState<HTMLElement | null>(null);
+export function useAnimatedValue(target: number, duration = 1200) {
+  const [displayValue, setDisplayValue] = useState("0");
+  const frameRef = useRef<number>(0);
+  const startRef = useRef<number>(0);
+  const prevRef = useRef(0);
+
+  useEffect(() => {
+    const from = prevRef.current;
+    const to = target;
+    prevRef.current = target;
+
+    if (from === to) {
+      setDisplayValue(formatCompact(to));
+      return;
+    }
+
+    startRef.current = performance.now();
+
+    function tick(now: number) {
+      const elapsed = now - startRef.current;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = from + (to - from) * eased;
+      setDisplayValue(formatCompact(current));
+
+      if (progress < 1) {
+        frameRef.current = requestAnimationFrame(tick);
+      }
+    }
+
+    frameRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameRef.current);
+  }, [target, duration]);
+
+  return displayValue;
+}
+
+export function useInView(threshold = 0.1) {
+  const ref = useRef<HTMLDivElement | null>(null);
   const [inView, setInView] = useState(false);
 
   useEffect(() => {
-    if (!ref) return;
+    const el = ref.current;
+    if (!el) return;
     const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setInView(true);
-          observer.disconnect();
-        }
-      },
+      ([entry]) => { if (entry.isIntersecting) { setInView(true); observer.disconnect(); } },
       { threshold }
     );
-    observer.observe(ref);
+    observer.observe(el);
     return () => observer.disconnect();
-  }, [ref, threshold]);
+  }, [threshold]);
 
-  return { ref: setRef, inView };
+  return { ref, inView };
+}
+
+function formatCompact(value: number): string {
+  if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return value.toFixed(value % 1 === 0 ? 0 : 2);
 }

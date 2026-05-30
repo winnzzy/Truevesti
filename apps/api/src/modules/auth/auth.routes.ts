@@ -91,7 +91,7 @@ const signupHandler = async (req: Request, res: Response) => {
             timezone: "Africa/Lagos"
           }
         },
-        kycChecks: { create: { provider: "manual" } },
+        kycChecks: { create: { provider: "manual", status: "NOT_SUBMITTED" } },
         consents: { create: { type: "RISK_DISCLOSURE", version: "2026-05", ipAddress: req.ip } },
         auditLogs: { create: { action: "USER_REGISTERED", entity: "User", ipAddress: req.ip } }
       }

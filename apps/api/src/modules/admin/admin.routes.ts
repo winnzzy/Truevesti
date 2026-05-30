@@ -327,7 +327,7 @@ adminRouter.patch("/kyc/:id/decision", async (req: AuthRequest, res: Response) =
   console.log("KYC approval requested:", kycId);
 
   const input = z.object({
-    status: z.enum(["VERIFIED", "REJECTED", "PENDING"]),
+    status: z.enum(["APPROVED", "REJECTED", "PENDING"]),
     reason: z.string().max(1000).optional()
   }).parse(req.body);
 

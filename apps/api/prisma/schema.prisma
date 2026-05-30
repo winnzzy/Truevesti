@@ -15,8 +15,10 @@ enum UserRole {
 }
 
 enum VerificationStatus {
+  NOT_SUBMITTED
   PENDING
   VERIFIED
+  APPROVED
   REJECTED
 }
 

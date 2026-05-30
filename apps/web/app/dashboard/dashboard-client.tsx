@@ -197,7 +197,7 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
   const investorLevel = getInvestorLevel(totalInvested);
   const latestKycStatus = kycChecks.length > 0 ? kycChecks[0].status : "NOT_SUBMITTED";
   /* KYC display: derive from same KycCheck.status field used by admin */
-  const kycDisplayText = latestKycStatus === "VERIFIED" ? "Approved" : latestKycStatus === "PENDING" ? "Pending" : latestKycStatus === "REJECTED" ? "Rejected" : "Not Submitted";
+  const kycDisplayText = (latestKycStatus === "VERIFIED" || latestKycStatus === "APPROVED") ? "Approved" : latestKycStatus === "PENDING" ? "Pending" : latestKycStatus === "REJECTED" ? "Rejected" : "Not Submitted";
 
   /* ── Withdrawal eligibility: compute per-investment maturity-aware amounts ── */
   const withdrawalEligibility = useMemo(() => {
@@ -362,7 +362,7 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                       { label: "Today's Earnings", value: usd(todayEarnings), icon: "📈", accent: "gold" },
                       { label: "Active Investments", value: String(activeInvestments.length), icon: "📊", accent: "blue" },
                       { label: "Pending Withdrawals", value: usd(pendingWithdrawals), icon: "⏳", accent: "gold" },
-                      { label: "Verification", value: kycDisplayText, icon: latestKycStatus === "VERIFIED" ? "✅" : "⚠️", accent: "mint" },
+                      { label: "Verification", value: kycDisplayText, icon: (latestKycStatus === "VERIFIED" || latestKycStatus === "APPROVED") ? "✅" : "⚠️", accent: "mint" },
                     ].map((s, i) => (
                       <motion.div key={s.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="glass-card group relative overflow-hidden p-5">
                         <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-gradient-to-br from-mint/20 to-mint/5 opacity-60 blur-2xl transition-opacity group-hover:opacity-100" />
@@ -455,7 +455,7 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                     ))}
                   </div>
                   {investments.length === 0 ? (
-                    <div className="glass-card-static p-12 text-center"><span className="text-4xl">📊</span><p className="mt-4 text-sm text-slate-400">No investments yet</p><p className="mt-1 text-xs text-slate-500">Fund your account and start investing.</p></div>
+                    <div className="glass-card-static p-12 text-center"><span className="text-4xl">📊</span><p className="mt-4 text-sm text-slate-400">No investments yet</p><p className="mt-1 text-xs text-slate-500">Fund your account and start investing.</p>{availableBalance > 0 ? <Link href="/plans" className="mt-4 inline-block rounded-xl bg-gradient-to-r from-mint to-emerald-400 px-6 py-3 text-sm font-bold text-ink transition hover:opacity-90">Browse Plans & Invest</Link> : <button onClick={() => setActiveTab("deposits")} className="mt-4 rounded-xl bg-mint/20 px-6 py-3 text-sm font-semibold text-mint transition hover:bg-mint/30">Make a Deposit First</button>}</div>
                   ) : (
                     <div className="space-y-4">{investments.map((inv, i) => {
                       const progress = inv.progressPercent || 0;
@@ -778,7 +778,7 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                         { name: "First Withdrawal", icon: "🏦", desc: "Made your first withdrawal", unlocked: withdrawals.length > 0 },
                         { name: "Portfolio Builder", icon: "🔥", desc: "Portfolio reached $1,000", unlocked: totalInvested >= 1000 },
                         { name: "Diversified", icon: "📊", desc: "3+ active investments", unlocked: activeInvestments.length >= 3 },
-                        { name: "Verified", icon: "✅", desc: "Completed KYC verification", unlocked: latestKycStatus === "VERIFIED" },
+                        { name: "Verified", icon: "✅", desc: "Completed KYC verification", unlocked: (latestKycStatus === "VERIFIED" || latestKycStatus === "APPROVED") },
                       ].map((a, i) => (
                         <motion.div key={a.name} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 + i * 0.1 }} className={`achievement-badge ${a.unlocked ? "unlocked" : "locked"}`}>
                           <span className="text-3xl">{a.icon}</span>

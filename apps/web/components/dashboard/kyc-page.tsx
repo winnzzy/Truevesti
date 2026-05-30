@@ -36,7 +36,7 @@ export default function KycPage() {
   const selfieInputRef = useRef<HTMLInputElement>(null);
 
   const latestStatus = kycChecks.length > 0 ? kycChecks[0].status : "NOT_SUBMITTED";
-  const isVerified = latestStatus === "VERIFIED";
+  const isVerified = latestStatus === "VERIFIED" || latestStatus === "APPROVED";
   const isPending = latestStatus === "PENDING";
   const isRejected = latestStatus === "REJECTED";
   const canSubmit = !isVerified && !isPending;
@@ -92,6 +92,7 @@ export default function KycPage() {
   }
 
   const statusConfig = {
+    APPROVED: { label: "Approved", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: "✅", desc: "Your identity has been verified. You have full access to all platform features." },
     VERIFIED: { label: "Approved", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: "✅", desc: "Your identity has been verified. You have full access to all platform features." },
     PENDING: { label: "Pending Review", color: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20", icon: "⏳", desc: "Your documents are being reviewed. This usually takes 1-3 business days." },
     REJECTED: { label: "Rejected", color: "text-red-400 bg-red-500/10 border-red-500/20", icon: "❌", desc: "Your verification was rejected. Please review the reason and resubmit." },
@@ -133,7 +134,7 @@ export default function KycPage() {
             {kycChecks.slice(1).map((check, i) => (
               <div key={check.id} className="flex items-center justify-between rounded-xl bg-white/[0.03] p-3">
                 <div>
-                  <span className={`text-xs font-bold ${check.status === "VERIFIED" ? "text-emerald-400" : check.status === "PENDING" ? "text-yellow-400" : check.status === "REJECTED" ? "text-red-400" : "text-slate-400"}`}>
+                  <span className={`text-xs font-bold ${(check.status === "VERIFIED" || check.status === "APPROVED") ? "text-emerald-400" : check.status === "PENDING" ? "text-yellow-400" : check.status === "REJECTED" ? "text-red-400" : "text-slate-400"}`}>
                     {check.status}
                   </span>
                   {check.reason && <p className="mt-0.5 text-[10px] text-slate-500">Reason: {check.reason}</p>}

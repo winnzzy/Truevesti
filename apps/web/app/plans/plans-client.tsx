@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-import { apiRequest, readSession } from "@/lib/api";
+import { apiRequest, readSession, ApiRequestError, logoutSession } from "@/lib/api";
 
 type Plan = {
   id: string;
@@ -131,7 +131,13 @@ export function PlansClient() {
         .then((data) => setBalance(data.balance))
         .catch(() => {});
     } catch (err) {
-      setInvestError(err instanceof Error ? err.message : "Unable to start investment");
+      if (err instanceof ApiRequestError && err.status === 401) {
+        setInvestError("Your session has expired. Please sign in again.");
+      } else if (err instanceof ApiRequestError && err.status === 403) {
+        setInvestError(err.message || "You do not have permission to perform this action.");
+      } else {
+        setInvestError(err instanceof Error ? err.message : "Unable to start investment");
+      }
     } finally {
       setInvestLoading(false);
     }

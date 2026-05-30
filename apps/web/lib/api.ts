@@ -91,9 +91,8 @@ async function refreshAuthSession(): Promise<AuthSession> {
   });
 
   if (!response.ok) {
-    clearSession();
     const errorData = (await parseResponse<ApiError>(response))?.error;
-    throw new Error(errorData ?? "Unable to refresh session");
+    throw new ApiRequestError(errorData ?? "Unable to refresh session", response.status, "SESSION_REFRESH_FAILED");
   }
 
   const data = await response.json() as { accessToken: string; refreshToken: string };

@@ -6,7 +6,7 @@ type DbClient = PrismaClient | Prisma.TransactionClient;
 export async function getUserBalance(userId: string, client: DbClient = prisma) {
   const [deposits, activeInvestments, completedAccruals, lockedWithdrawals] = await Promise.all([
     client.deposit.aggregate({
-      where: { userId, status: "CONFIRMED" },
+      where: { userId, status: { in: ["CONFIRMED", "APPROVED"] } },
       _sum: { amountUsd: true }
     }),
     client.investment.aggregate({

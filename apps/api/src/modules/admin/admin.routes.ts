@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Investment, Prisma } from "@prisma/client";
 import { Router, type Request, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
@@ -233,7 +233,7 @@ adminRouter.delete("/plans/:id", async (req: AuthRequest, res: Response) => {
     return sendError(res, 400, "Plan is already deleted", { code: "PLAN_ALREADY_DELETED" });
   }
 
-  const hasActiveInvestments = plan.investments.some((inv) => inv.status === "ACTIVE");
+  const hasActiveInvestments = plan.investments.some((inv: Pick<Investment, "status">) => inv.status === "ACTIVE");
   if (hasActiveInvestments) {
     return sendError(res, 400, "Cannot delete plan with active investments. Disable it instead.", { code: "PLAN_HAS_ACTIVE_INVESTMENTS" });
   }

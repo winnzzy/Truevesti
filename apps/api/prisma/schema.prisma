@@ -112,7 +112,6 @@ model InvestmentPlan {
   assetAllocation String
   supportedAssets String[]
   isActive        Boolean      @default(true)
-  deletedAt       DateTime?
   investments     Investment[]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt

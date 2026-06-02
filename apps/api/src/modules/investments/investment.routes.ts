@@ -18,7 +18,7 @@ function enrichInvestment(investment: any) {
 }
 
 investmentRouter.get("/plans", async (_req: Request, res: Response) => {
-  const plans = await prisma.investmentPlan.findMany({ where: { isActive: true, deletedAt: null }, orderBy: { minDepositUsd: "asc" } });
+  const plans = await prisma.investmentPlan.findMany({ where: { isActive: true }, orderBy: { minDepositUsd: "asc" } });
   res.json({ plans });
 });
 
@@ -53,7 +53,7 @@ investmentRouter.post("/", requireAuth, async (req: AuthRequest, res: Response) 
     disclosureHash: z.string().min(16).optional()
   }).parse(req.body);
 
-  const plan = await prisma.investmentPlan.findFirstOrThrow({ where: { id: input.planId, isActive: true, deletedAt: null } });
+  const plan = await prisma.investmentPlan.findFirstOrThrow({ where: { id: input.planId, isActive: true } });
   const principalUsd = input.principalUsd;
 
   if (principalUsd < Number(plan.minDepositUsd) || principalUsd > Number(plan.maxDepositUsd)) {

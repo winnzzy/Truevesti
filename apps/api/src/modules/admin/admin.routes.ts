@@ -213,7 +213,7 @@ adminRouter.get("/readiness", async (_req: Request, res: Response) => {
 });
 
 adminRouter.get("/plans", async (_req: Request, res: Response) => {
-  const plans = await prisma.investmentPlan.findMany({ where: { deletedAt: null }, orderBy: { minDepositUsd: "asc" } });
+  const plans = await prisma.investmentPlan.findMany({ orderBy: { minDepositUsd: "asc" } });
   res.json({ plans });
 });
 
@@ -229,8 +229,8 @@ adminRouter.delete("/plans/:id", async (req: AuthRequest, res: Response) => {
     return sendError(res, 404, "Plan not found", { code: "PLAN_NOT_FOUND" });
   }
 
-  if (plan.deletedAt) {
-    return sendError(res, 400, "Plan is already deleted", { code: "PLAN_ALREADY_DELETED" });
+  if (!plan.isActive) {
+    return sendError(res, 400, "Plan is already disabled", { code: "PLAN_ALREADY_DISABLED" });
   }
 
   const hasActiveInvestments = plan.investments.some((inv: { status: string }) => inv.status === "ACTIVE");
@@ -241,7 +241,7 @@ adminRouter.delete("/plans/:id", async (req: AuthRequest, res: Response) => {
   const deleted = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.investmentPlan.update({
       where: { id: planId },
-      data: { deletedAt: new Date(), isActive: false }
+      data: { isActive: false }
     });
     await tx.auditLog.create({
       data: {

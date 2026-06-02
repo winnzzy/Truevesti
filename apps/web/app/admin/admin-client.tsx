@@ -550,8 +550,8 @@ export function AdminClient() {
     setError("");
     try {
       await apiRequest(`/admin/plans/${planId}`, { method: "DELETE" });
-      setPlans((prev) => prev.filter((p) => p.id !== planId));
       setNotice("Investment plan deleted successfully.");
+      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete plan");
     } finally {

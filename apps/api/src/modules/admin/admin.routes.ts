@@ -229,34 +229,31 @@ adminRouter.delete("/plans/:id", async (req: AuthRequest, res: Response) => {
     return sendError(res, 404, "Plan not found", { code: "PLAN_NOT_FOUND" });
   }
 
-  if (!plan.isActive) {
-    return sendError(res, 400, "Plan is already disabled", { code: "PLAN_ALREADY_DISABLED" });
-  }
-
   const hasActiveInvestments = plan.investments.some((inv: { status: string }) => inv.status === "ACTIVE");
   if (hasActiveInvestments) {
-    return sendError(res, 400, "Cannot delete plan with active investments. Disable it instead.", { code: "PLAN_HAS_ACTIVE_INVESTMENTS" });
+    return sendError(res, 400, "Cannot delete plan with active investments.", { code: "PLAN_HAS_ACTIVE_INVESTMENTS" });
   }
 
-  const deleted = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-    const updated = await tx.investmentPlan.update({
-      where: { id: planId },
-      data: { isActive: false }
-    });
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    // Investment → InvestmentPlan uses onDelete: Restrict, so we must delete
+    // non-active investments first (active ones were already checked above).
+    // Accrual → Investment uses onDelete: Cascade, so accruals are handled automatically.
+    // Withdrawal → Investment uses onDelete: SetNull, so withdrawals are safe.
+    await tx.investment.deleteMany({ where: { planId, status: { not: "ACTIVE" } } });
+    await tx.investmentPlan.delete({ where: { id: planId } });
     await tx.auditLog.create({
       data: {
         actorId: actorId(req),
         action: "INVESTMENT_PLAN_DELETED",
         entity: "InvestmentPlan",
-        entityId: updated.id,
+        entityId: planId,
         metadata: { name: plan.name },
         ipAddress: req.ip
       }
     });
-    return updated;
   });
 
-  res.json({ plan: deleted });
+  res.json({ success: true });
 });
 
 adminRouter.post("/plans", async (req: AuthRequest, res: Response) => {

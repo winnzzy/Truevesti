@@ -213,8 +213,50 @@ adminRouter.get("/readiness", async (_req: Request, res: Response) => {
 });
 
 adminRouter.get("/plans", async (_req: Request, res: Response) => {
-  const plans = await prisma.investmentPlan.findMany({ orderBy: { minDepositUsd: "asc" } });
+  const plans = await prisma.investmentPlan.findMany({ where: { deletedAt: null }, orderBy: { minDepositUsd: "asc" } });
   res.json({ plans });
+});
+
+adminRouter.delete("/plans/:id", async (req: AuthRequest, res: Response) => {
+  const planId = String(req.params.id);
+
+  const plan = await prisma.investmentPlan.findUnique({
+    where: { id: planId },
+    include: { investments: { select: { status: true } } }
+  });
+
+  if (!plan) {
+    return sendError(res, 404, "Plan not found", { code: "PLAN_NOT_FOUND" });
+  }
+
+  if (plan.deletedAt) {
+    return sendError(res, 400, "Plan is already deleted", { code: "PLAN_ALREADY_DELETED" });
+  }
+
+  const hasActiveInvestments = plan.investments.some((inv) => inv.status === "ACTIVE");
+  if (hasActiveInvestments) {
+    return sendError(res, 400, "Cannot delete plan with active investments. Disable it instead.", { code: "PLAN_HAS_ACTIVE_INVESTMENTS" });
+  }
+
+  const deleted = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    const updated = await tx.investmentPlan.update({
+      where: { id: planId },
+      data: { deletedAt: new Date(), isActive: false }
+    });
+    await tx.auditLog.create({
+      data: {
+        actorId: actorId(req),
+        action: "INVESTMENT_PLAN_DELETED",
+        entity: "InvestmentPlan",
+        entityId: updated.id,
+        metadata: { name: plan.name },
+        ipAddress: req.ip
+      }
+    });
+    return updated;
+  });
+
+  res.json({ plan: deleted });
 });
 
 adminRouter.post("/plans", async (req: AuthRequest, res: Response) => {

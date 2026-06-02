@@ -543,6 +543,22 @@ export function AdminClient() {
 
   /* ─── Inline state that was incorrectly placed after early returns ─── */
 
+  const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null);
+
+  async function deletePlan(planId: string) {
+    setNotice("");
+    setError("");
+    try {
+      await apiRequest(`/admin/plans/${planId}`, { method: "DELETE" });
+      setPlans((prev) => prev.filter((p) => p.id !== planId));
+      setNotice("Investment plan deleted successfully.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete plan");
+    } finally {
+      setDeletingPlanId(null);
+    }
+  }
+
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [confirmDeleteUser, setConfirmDeleteUser] = useState<{ id: string; email: string } | null>(null);
 
@@ -856,7 +872,7 @@ export function AdminClient() {
         <Card className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="border-b border-white/10 text-xs uppercase tracking-[0.14em] text-slate-500">
-              <tr><th className="py-3">Plan</th><th>Limits</th><th>Duration</th><th>Return</th><th>Risk</th><th>Status</th><th>Action</th></tr>
+              <tr><th className="py-3">Plan</th><th>Limits</th><th>Duration</th><th>Return</th><th>Risk</th><th>Status</th><th>Actions</th></tr>
             </thead>
             <tbody className="divide-y divide-white/10">
               {filteredPlans.length ? filteredPlans.map((p) => (
@@ -867,12 +883,40 @@ export function AdminClient() {
                   <td className="py-4 pr-4 text-slate-300">{(Number(p.estimatedYieldMin) * 100).toFixed(1)}% - {(Number(p.estimatedYieldMax) * 100).toFixed(1)}%</td>
                   <td className="py-4 pr-4 text-slate-300">{p.riskLevel}</td>
                   <td className="py-4 pr-4"><StatusBadge status={p.isActive ? "ACTIVE" : "INACTIVE"} /></td>
-                  <td className="py-4"><button className="focus-ring rounded-md border border-white/20 px-3 py-2 text-xs text-white" onClick={() => togglePlan(p)}>{p.isActive ? "Disable" : "Enable"}</button></td>
+                  <td className="py-4">
+                    <div className="flex gap-2">
+                      <button className="focus-ring rounded-md border border-white/20 px-3 py-2 text-xs text-white" onClick={() => togglePlan(p)}>{p.isActive ? "Disable" : "Enable"}</button>
+                      <button
+                        className="focus-ring rounded-md border border-red-300/40 px-3 py-2 text-xs font-semibold text-red-100 transition hover:bg-red-500/20"
+                        onClick={() => setDeletingPlanId(p.id)}
+                        disabled={deletingPlanId === p.id}
+                      >
+                        {deletingPlanId === p.id ? "Deleting…" : "🗑 Delete"}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               )) : <EmptyRow colSpan={7} message="No plans match this filter." />}
             </tbody>
           </table>
         </Card>
+        {deletingPlanId && (
+          <div
+            className="fixed inset-0 flex items-center justify-center bg-black/50"
+            style={{ zIndex: 100 }}
+            onClick={() => setDeletingPlanId(null)}
+          >
+            <div className="bg-card rounded-lg p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold mb-2 text-red-400">Delete Investment Plan?</h3>
+              <p className="text-sm text-muted-foreground mb-1">This action cannot be undone.</p>
+              <p className="text-sm text-muted-foreground mb-6">The selected investment plan will be permanently removed.</p>
+              <div className="flex gap-3 justify-end">
+                <button onClick={() => setDeletingPlanId(null)} className="px-4 py-2 rounded-md border border-border hover:bg-muted text-sm">Cancel</button>
+                <button onClick={() => deletePlan(deletingPlanId)} className="px-4 py-2 rounded-md bg-red-600 hover:bg-red-700 text-white text-sm">Delete Plan</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

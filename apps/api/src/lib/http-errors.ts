@@ -1,7 +1,10 @@
 import type { Response } from "express";
+import pino from "pino";
 import { ZodError } from "zod";
 import { EmailConfigurationError } from "./email-config.js";
 import { EmailDeliveryError } from "./email-delivery-error.js";
+
+const logger = pino({ name: "http-errors" });
 
 function isPrismaKnownError(err: unknown): err is { code: string; meta?: unknown; message?: string } {
   return (
@@ -43,7 +46,16 @@ export function handleRouteError(res: Response, err: unknown) {
   }
 
   if (err instanceof Error) {
-    console.error(err);
+    logger.error(
+      {
+        name: err.name,
+        message: err.message,
+        stack: err.stack,
+        code: isPrismaKnownError(err) ? err.code : undefined,
+        meta: isPrismaKnownError(err) ? err.meta : undefined
+      },
+      "Route error"
+    );
     return sendError(res, 500, "Something went wrong. Please try again.", { code: "INTERNAL_ERROR" });
   }
 

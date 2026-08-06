@@ -7,6 +7,8 @@
     "build": "tsc",
     "start": "node scripts/render-start.mjs",
     "render:start": "node scripts/render-start.mjs",
+    "prisma:check-env": "node scripts/check-prisma-env.mjs",
+    "prisma:deploy:safe": "node scripts/prisma-safe-deploy.mjs",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/**/*.test.ts",

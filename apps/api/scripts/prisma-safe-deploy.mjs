@@ -1,6 +1,20 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 
+const envCheck = spawnSync("node scripts/check-prisma-env.mjs", {
+  stdio: "inherit",
+  shell: true,
+  env: process.env
+});
+
+if (envCheck.error) {
+  throw envCheck.error;
+}
+
+if (envCheck.status !== 0) {
+  process.exit(envCheck.status ?? 1);
+}
+
 const schemaPath = "prisma/schema.prisma";
 const prismaBaseCommand = `npx prisma`;
 const baselineMigrations = [

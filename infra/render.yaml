@@ -4,6 +4,7 @@ services:
     runtime: docker
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: .
+    dockerCommand: npm run start --workspace apps/api
     region: frankfurt
     plan: free
     envVars:
@@ -12,6 +13,8 @@ services:
       - key: PORT
         value: "4000"
       - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
         sync: false
       - key: WEB_ORIGIN
         sync: false

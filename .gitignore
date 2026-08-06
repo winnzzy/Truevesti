@@ -22,8 +22,7 @@ coverage
 # Build artifacts
 *.tsbuildinfo
 
-# Prisma migrations (generated, not hand-written)
-apps/api/prisma/migrations
+# Prisma migrations should be versioned for safe production deploys
 
 # OS files
 .DS_Store

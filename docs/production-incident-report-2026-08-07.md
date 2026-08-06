@@ -60,7 +60,13 @@ This avoids destructive actions and unblocks startup on migrated production data
 
 Updated API start script to use safe deploy wrapper:
 - apps/api/package.json
-  - start: node scripts/prisma-safe-deploy.mjs && node dist/server.js
+  - start: node scripts/render-start.mjs
+
+Added dedicated Render bootstrap command:
+- apps/api/scripts/render-start.mjs
+  - runs prisma generate
+  - runs non-destructive safe migration deploy/recovery
+  - starts node dist/server.js
 
 ### Docker Runtime Compatibility
 

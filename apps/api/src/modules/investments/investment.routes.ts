@@ -46,12 +46,21 @@ investmentRouter.get("/:id", requireAuth, async (req: AuthRequest, res: Response
 });
 
 investmentRouter.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
-  const input = z.object({
+  const parsed = z.object({
     planId: z.string().min(1),
     principalUsd: z.number().positive(),
     assetSymbol: z.string().min(2),
     disclosureHash: z.string().min(16).optional()
-  }).parse(req.body);
+  }).safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "Validation failed",
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
 
   const plan = await prisma.investmentPlan.findFirstOrThrow({ where: { id: input.planId, isActive: true } });
   const principalUsd = input.principalUsd;

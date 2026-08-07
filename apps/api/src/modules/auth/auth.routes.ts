@@ -68,7 +68,14 @@ async function createSession(req: AuthRequest, user: { id: string; role: string 
 
 const signupHandler = async (req: Request, res: Response) => {
   try {
-    const input = signupSchema.parse(req.body);
+    const parsed = signupSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "Validation failed", {
+        code: "VALIDATION_ERROR",
+        details: parsed.error.flatten().fieldErrors
+      });
+    }
+    const input = parsed.data;
     if (!input.acceptedRisk) {
       return sendError(res, 400, "Risk consent is required", { code: "RISK_CONSENT_REQUIRED" });
     }
@@ -122,7 +129,14 @@ authRouter.post("/register", otpRateLimiter, signupHandler);
 
 authRouter.post("/otp/verify", async (req: Request, res: Response) => {
   try {
-    const input = verifyOtpSchema.parse(req.body);
+    const parsed = verifyOtpSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "Validation failed", {
+        code: "VALIDATION_ERROR",
+        details: parsed.error.flatten().fieldErrors
+      });
+    }
+    const input = parsed.data;
     const result = await verifySignupOtp(input.email, input.code);
 
     if (!result.ok) {
@@ -140,7 +154,14 @@ authRouter.post("/otp/verify", async (req: Request, res: Response) => {
 
 authRouter.post("/otp/resend", otpRateLimiter, async (req: Request, res: Response) => {
   try {
-    const input = emailSchema.parse(req.body);
+    const parsed = emailSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "Validation failed", {
+        code: "VALIDATION_ERROR",
+        details: parsed.error.flatten().fieldErrors
+      });
+    }
+    const input = parsed.data;
     const email = input.email.toLowerCase();
     const user = await prisma.user.findUnique({ where: { email } });
 
@@ -174,7 +195,14 @@ authRouter.post("/otp/resend", otpRateLimiter, async (req: Request, res: Respons
 
 authRouter.post("/login", async (req: Request, res: Response) => {
   try {
-    const input = loginSchema.parse(req.body);
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "Validation failed", {
+        code: "VALIDATION_ERROR",
+        details: parsed.error.flatten().fieldErrors
+      });
+    }
+    const input = parsed.data;
     const email = input.email.toLowerCase();
     const user = await prisma.user.findUnique({
       where: { email },
@@ -248,7 +276,14 @@ authRouter.get("/me", requireAuth, async (req: AuthRequest, res: Response) => {
 
 authRouter.post("/refresh", async (req: Request, res: Response) => {
   try {
-    const input = z.object({ refreshToken: z.string().min(1) }).parse(req.body);
+    const parsed = z.object({ refreshToken: z.string().min(1) }).safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "Validation failed", {
+        code: "VALIDATION_ERROR",
+        details: parsed.error.flatten().fieldErrors
+      });
+    }
+    const input = parsed.data;
 
     let payload: { sub: string; role: string; sid: string };
     try {
@@ -296,7 +331,14 @@ authRouter.post("/refresh", async (req: Request, res: Response) => {
 
 authRouter.post("/logout", async (req: Request, res: Response) => {
   try {
-    const input = z.object({ refreshToken: z.string().min(1) }).parse(req.body);
+    const parsed = z.object({ refreshToken: z.string().min(1) }).safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "Validation failed", {
+        code: "VALIDATION_ERROR",
+        details: parsed.error.flatten().fieldErrors
+      });
+    }
+    const input = parsed.data;
 
     try {
       const payload = await new Promise<{ sid: string }>((resolve, reject) => {
@@ -323,13 +365,20 @@ authRouter.post("/logout", async (req: Request, res: Response) => {
 /* ── Profile update endpoint ── */
 authRouter.patch("/profile", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const input = z.object({
+    const parsed = z.object({
       firstName: z.string().trim().min(1, "First name is required").max(100).optional(),
       lastName: z.string().trim().min(1, "Last name is required").max(100).optional(),
       phone: z.string().trim().max(20).optional(),
       country: z.string().trim().max(100).optional(),
       timezone: z.string().trim().max(50).optional()
-    }).parse(req.body);
+    }).safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "Validation failed", {
+        code: "VALIDATION_ERROR",
+        details: parsed.error.flatten().fieldErrors
+      });
+    }
+    const input = parsed.data;
 
     const userId = req.user!.id;
 
@@ -393,10 +442,17 @@ authRouter.get("/profile", requireAuth, async (req: AuthRequest, res: Response) 
 /* ── Change password endpoint ── */
 authRouter.post("/password/change", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const input = z.object({
+    const parsed = z.object({
       currentPassword: z.string().min(1, "Current password is required"),
       newPassword: passwordSchema
-    }).parse(req.body);
+    }).safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "Validation failed", {
+        code: "VALIDATION_ERROR",
+        details: parsed.error.flatten().fieldErrors
+      });
+    }
+    const input = parsed.data;
 
     const userId = req.user!.id;
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
@@ -452,7 +508,14 @@ authRouter.get("/user/notifications", requireAuth, async (req: AuthRequest, res:
 
 authRouter.post("/password/forgot", otpRateLimiter, async (req: Request, res: Response) => {
   try {
-    const input = emailSchema.parse(req.body);
+    const parsed = emailSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "Validation failed", {
+        code: "VALIDATION_ERROR",
+        details: parsed.error.flatten().fieldErrors
+      });
+    }
+    const input = parsed.data;
     const email = input.email.toLowerCase();
     const user = await prisma.user.findUnique({ where: { email } });
 
@@ -481,7 +544,14 @@ const resetPasswordSchema = z.object({
 
 authRouter.post("/password/reset/verify", async (req: Request, res: Response) => {
   try {
-    const input = verifyOtpSchema.parse(req.body);
+    const parsed = verifyOtpSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "Validation failed", {
+        code: "VALIDATION_ERROR",
+        details: parsed.error.flatten().fieldErrors
+      });
+    }
+    const input = parsed.data;
     const result = await verifyPasswordResetOtp(input.email, input.code);
 
     if (!result.ok) {
@@ -499,7 +569,14 @@ authRouter.post("/password/reset/verify", async (req: Request, res: Response) =>
 
 authRouter.post("/password/reset", async (req: Request, res: Response) => {
   try {
-    const input = resetPasswordSchema.parse(req.body);
+    const parsed = resetPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "Validation failed", {
+        code: "VALIDATION_ERROR",
+        details: parsed.error.flatten().fieldErrors
+      });
+    }
+    const input = parsed.data;
     const result = await verifyPasswordResetOtp(input.email, input.code);
 
     if (!result.ok) {

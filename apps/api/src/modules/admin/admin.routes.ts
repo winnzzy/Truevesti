@@ -40,14 +40,16 @@ adminRouter.post("/purge-user", async (req: Request, res: Response) => {
     return sendError(res, 401, "Invalid or missing purge secret", { code: "PURGE_UNAUTHORIZED" });
   }
 
+  const parsed = z.object({ email: z.string().email() }).safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, "Enter a valid email address", { code: "VALIDATION_ERROR" });
+  }
+
   try {
-    const input = z.object({ email: z.string().email() }).parse(req.body);
+    const input = parsed.data;
     const result = await deleteUserByEmail(input.email);
     return res.json(result);
   } catch (err) {
-    if (err instanceof z.ZodError) {
-      return sendError(res, 400, "Enter a valid email address", { code: "VALIDATION_ERROR" });
-    }
     console.error(err);
     return sendError(res, 500, "Could not delete user", { code: "PURGE_FAILED" });
   }
@@ -137,7 +139,14 @@ adminRouter.get("/company-wallets", async (_req: Request, res: Response) => {
 });
 
 adminRouter.post("/company-wallets", async (req: AuthRequest, res: Response) => {
-  const input = walletAddressSchema.parse(req.body);
+  const parsed = walletAddressSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, "Validation failed", {
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
   const wallet = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const saved = await tx.companyWalletAddress.upsert({
       where: {
@@ -167,7 +176,14 @@ adminRouter.post("/company-wallets", async (req: AuthRequest, res: Response) => 
 });
 
 adminRouter.patch("/company-wallets/:id", async (req: AuthRequest, res: Response) => {
-  const input = walletAddressUpdateSchema.parse(req.body);
+  const parsed = walletAddressUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, "Validation failed", {
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
   const wallet = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const saved = await tx.companyWalletAddress.update({
       where: { id: String(req.params.id) },
@@ -258,7 +274,14 @@ adminRouter.delete("/plans/:id", async (req: AuthRequest, res: Response) => {
 });
 
 adminRouter.post("/plans", async (req: AuthRequest, res: Response) => {
-  const input = planSchema.parse(req.body);
+  const parsed = planSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, "Validation failed", {
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
   const plan = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const created = await tx.investmentPlan.create({ data: { ...input, isActive: input.isActive ?? true } });
     await tx.auditLog.create({
@@ -276,7 +299,14 @@ adminRouter.post("/plans", async (req: AuthRequest, res: Response) => {
 });
 
 adminRouter.patch("/plans/:id", async (req: AuthRequest, res: Response) => {
-  const input = planSchema.partial().parse(req.body);
+  const parsed = planSchema.partial().safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, "Validation failed", {
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
   const plan = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.investmentPlan.update({ where: { id: String(req.params.id) }, data: input });
     await tx.auditLog.create({
@@ -306,7 +336,14 @@ adminRouter.get("/investments", async (_req: Request, res: Response) => {
 });
 
 adminRouter.patch("/deposits/:id/decision", async (req: AuthRequest, res: Response) => {
-  const input = depositDecisionSchema.parse(req.body);
+  const parsed = depositDecisionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, "Validation failed", {
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
   const deposit = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.deposit.update({
       where: { id: String(req.params.id) },
@@ -366,7 +403,14 @@ adminRouter.patch("/kyc/:id/decision", async (req: AuthRequest, res: Response) =
   const kycId = String(req.params.id);
   console.log("KYC approval requested:", kycId);
 
-  const input = kycDecisionSchema.parse(req.body);
+  const parsed = kycDecisionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, "Validation failed", {
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
 
   let kyc;
   try {
@@ -422,10 +466,17 @@ adminRouter.get("/support/tickets", async (_req: Request, res: Response) => {
 });
 
 adminRouter.patch("/support/tickets/:id", async (req: AuthRequest, res: Response) => {
-  const input = z.object({
+  const parsed = z.object({
     status: z.string().min(2).max(40),
     adminResponse: z.string().min(3).max(4000)
-  }).parse(req.body);
+  }).safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, "Validation failed", {
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
   const ticket = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const updated = await tx.supportTicket.update({
       where: { id: String(req.params.id) },
@@ -453,11 +504,18 @@ adminRouter.patch("/support/tickets/:id", async (req: AuthRequest, res: Response
 });
 
 adminRouter.patch("/withdrawals/:id/decision", async (req: AuthRequest, res: Response) => {
-  const input = z.discriminatedUnion("status", [
+  const parsed = z.discriminatedUnion("status", [
     z.object({ status: z.literal("APPROVED"), adminNote: z.string().max(1000).optional() }),
     z.object({ status: z.literal("REJECTED"), reason: z.string().min(3).max(1000) }),
     z.object({ status: z.literal("PAID"), txHash: z.string().min(8), adminNote: z.string().max(1000).optional() })
-  ]).parse(req.body);
+  ]).safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, "Validation failed", {
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
 
   const existing = await prisma.withdrawal.findUniqueOrThrow({ where: { id: String(req.params.id) } });
   if (input.status === "APPROVED") {

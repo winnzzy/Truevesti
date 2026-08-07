@@ -22,7 +22,15 @@ supportRouter.get("/tickets", requireAuth, requireEmailVerified, async (req: Aut
 });
 
 supportRouter.post("/tickets", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
-  const input = ticketSchema.parse(req.body);
+  const parsed = ticketSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "Validation failed",
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
   const ticket = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const created = await tx.supportTicket.create({
       data: {

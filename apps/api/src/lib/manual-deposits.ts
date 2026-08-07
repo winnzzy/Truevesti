@@ -29,7 +29,10 @@ export const manualDepositOptionSchema = manualDepositOptionBaseSchema.superRefi
 export const manualDepositRequestSchema = manualDepositOptionBaseSchema.extend({
   amountUsd: z.number().positive(),
   txHash: z.string().trim().min(8),
-  proofUrl: z.string().url().optional()
+  proofUrl: z.preprocess(
+    (value) => (value === "" || value === null ? undefined : value),
+    z.string().url().optional()
+  )
 }).superRefine(requireSupportedManualDepositOption);
 
 export const walletAddressSchema = manualDepositOptionBaseSchema.extend({

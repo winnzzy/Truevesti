@@ -61,12 +61,21 @@ withdrawalRouter.get("/", requireAuth, requireEmailVerified, async (req: AuthReq
 });
 
 withdrawalRouter.post("/", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
-  const input = z.object({
+  const parsed = z.object({
     assetSymbol: z.enum(["BTC", "ETH", "USDT", "USDC", "BNB", "SOL"]),
     network: z.string().min(2).transform((s: string) => s.toUpperCase()),
     destination: z.string().min(8).max(240),
     amountUsd: z.number().positive().max(100_000)
-  }).parse(req.body);
+  }).safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "Validation failed",
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
 
   // Validate destination address format
   const isValidAddress = validateAddressFormat(input.destination, input.assetSymbol, input.network);

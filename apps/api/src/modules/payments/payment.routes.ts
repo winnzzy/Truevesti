@@ -102,7 +102,15 @@ paymentRouter.get("/deposit-options", requireAuth, requireEmailVerified, async (
 });
 
 paymentRouter.post("/deposits/manual", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
-  const input = manualDepositRequestSchema.parse(req.body);
+  const parsed = manualDepositRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "Validation failed",
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
 
   // Look up admin-configured wallet first, then fall back to crypto-provider
   let wallet = await prisma.companyWalletAddress.findFirst({

@@ -16,9 +16,17 @@ kycRouter.get("/status", requireAuth, requireEmailVerified, async (req: AuthRequ
 });
 
 kycRouter.post("/manual", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
-  const input = z.object({
+  const parsed = z.object({
     reason: z.string().max(500).optional()
-  }).parse(req.body);
+  }).safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "Validation failed",
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+  const input = parsed.data;
 
   const check = await prisma.kycCheck.create({
     data: {
@@ -42,14 +50,24 @@ kycRouter.post("/manual", requireAuth, requireEmailVerified, async (req: AuthReq
 
 /* ── Full KYC submission endpoint ── */
 kycRouter.post("/submit", requireAuth, requireEmailVerified, async (req: AuthRequest, res: Response) => {
+  const parsed = z.object({
+    fullName: z.string().trim().min(1, "Full name is required").max(200),
+    dateOfBirth: z.string().trim().min(1, "Date of birth is required"),
+    country: z.string().trim().min(1, "Country is required").max(100),
+    address: z.string().trim().min(1, "Address is required").max(500),
+    documentType: z.enum(["passport", "national_id", "drivers_license"]),
+  }).safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "Validation failed",
+      code: "VALIDATION_ERROR",
+      details: parsed.error.flatten().fieldErrors
+    });
+  }
+
   try {
-    const input = z.object({
-      fullName: z.string().trim().min(1, "Full name is required").max(200),
-      dateOfBirth: z.string().trim().min(1, "Date of birth is required"),
-      country: z.string().trim().min(1, "Country is required").max(100),
-      address: z.string().trim().min(1, "Address is required").max(500),
-      documentType: z.enum(["passport", "national_id", "drivers_license"]),
-    }).parse(req.body);
+    const input = parsed.data;
 
     // Check if user already has a pending KYC
     const existingPending = await prisma.kycCheck.findFirst({
@@ -120,6 +138,6 @@ kycRouter.post("/submit", requireAuth, requireEmailVerified, async (req: AuthReq
 
     return res.status(201).json({ check });
   } catch (err) {
-    return res.status(400).json({ error: "Invalid submission data", details: err instanceof Error ? err.message : "Unknown error" });
+    return res.status(500).json({ error: "Invalid submission data", details: err instanceof Error ? err.message : "Unknown error" });
   }
 });

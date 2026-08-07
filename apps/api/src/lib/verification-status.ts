@@ -1,5 +1,12 @@
-import { VerificationStatus } from "@prisma/client";
 import { z } from "zod";
+
+export const VerificationStatus = {
+  NOT_SUBMITTED: "NOT_SUBMITTED",
+  PENDING: "PENDING",
+  VERIFIED: "VERIFIED",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED"
+} as const;
 
 export const kycDecisionSchema = z.object({
   status: z.enum([
@@ -9,5 +16,3 @@ export const kycDecisionSchema = z.object({
   ]),
   reason: z.string().max(1000).optional(),
 });
-
-export { VerificationStatus };

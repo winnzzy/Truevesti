@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiRequest } from "../../lib/api";
+import { KYC_STATUS, isApprovedKycStatus, normalizeKycStatus, type KycStatus } from "../../lib/verification-status";
 
 function shortDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -10,7 +11,7 @@ function shortDate(d: string) {
 
 interface KycCheck {
   id: string;
-  status: string;
+  status: KycStatus;
   provider: string;
   createdAt: string;
   reason?: string | null;
@@ -35,10 +36,10 @@ export default function KycPage() {
   const docInputRef = useRef<HTMLInputElement>(null);
   const selfieInputRef = useRef<HTMLInputElement>(null);
 
-  const latestStatus = kycChecks.length > 0 ? kycChecks[0].status : "NOT_SUBMITTED";
-  const isVerified = latestStatus === "VERIFIED" || latestStatus === "APPROVED";
-  const isPending = latestStatus === "PENDING";
-  const isRejected = latestStatus === "REJECTED";
+  const latestStatus = normalizeKycStatus(kycChecks[0]?.status);
+  const isVerified = isApprovedKycStatus(latestStatus);
+  const isPending = latestStatus === KYC_STATUS.PENDING;
+  const isRejected = latestStatus === KYC_STATUS.REJECTED;
   const canSubmit = !isVerified && !isPending;
 
   function fetchKyc() {
@@ -93,7 +94,6 @@ export default function KycPage() {
 
   const statusConfig = {
     APPROVED: { label: "Approved", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: "✅", desc: "Your identity has been verified. You have full access to all platform features." },
-    VERIFIED: { label: "Approved", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: "✅", desc: "Your identity has been verified. You have full access to all platform features." },
     PENDING: { label: "Pending Review", color: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20", icon: "⏳", desc: "Your documents are being reviewed. This usually takes 1-3 business days." },
     REJECTED: { label: "Rejected", color: "text-red-400 bg-red-500/10 border-red-500/20", icon: "❌", desc: "Your verification was rejected. Please review the reason and resubmit." },
     NOT_SUBMITTED: { label: "Not Submitted", color: "text-slate-400 bg-white/5 border-white/10", icon: "⚠️", desc: "Please complete identity verification to unlock all platform features." },
@@ -134,7 +134,7 @@ export default function KycPage() {
             {kycChecks.slice(1).map((check, i) => (
               <div key={check.id} className="flex items-center justify-between rounded-xl bg-white/[0.03] p-3">
                 <div>
-                  <span className={`text-xs font-bold ${(check.status === "VERIFIED" || check.status === "APPROVED") ? "text-emerald-400" : check.status === "PENDING" ? "text-yellow-400" : check.status === "REJECTED" ? "text-red-400" : "text-slate-400"}`}>
+                  <span className={`text-xs font-bold ${isApprovedKycStatus(check.status) ? "text-emerald-400" : check.status === KYC_STATUS.PENDING ? "text-yellow-400" : check.status === KYC_STATUS.REJECTED ? "text-red-400" : "text-slate-400"}`}>
                     {check.status}
                   </span>
                   {check.reason && <p className="mt-0.5 text-[10px] text-slate-500">Reason: {check.reason}</p>}

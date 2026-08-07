@@ -7,6 +7,7 @@ import { Card } from "@/components/card";
 import { Nav } from "@/components/nav";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { AdminSidebar, type AdminSection } from "@/components/admin-sidebar";
+import { KYC_STATUS, KYC_STATUS_FILTER_OPTIONS, type KycStatus } from "@/lib/verification-status";
 
 /* ─── Types ─── */
 
@@ -95,7 +96,7 @@ type AdminUser = {
 
 type AdminKyc = {
   id: string;
-  status: string;
+  status: KycStatus;
   reason: string | null;
   updatedAt: string;
   user: { email: string; profile?: { firstName?: string | null; lastName?: string | null } | null };
@@ -130,7 +131,7 @@ function money(value: string | number | null | undefined) {
 }
 
 function badgeClass(status: string) {
-  if (["CONFIRMED", "APPROVED", "PAID", "VERIFIED", "ACTIVE", "COMPLETED", "ANSWERED"].includes(status)) return "border-mint/30 bg-mint/10 text-mint";
+  if (["CONFIRMED", "APPROVED", "PAID", "ACTIVE", "COMPLETED", "ANSWERED"].includes(status)) return "border-mint/30 bg-mint/10 text-mint";
   if (["REJECTED", "FAILED", "CANCELLED", "INACTIVE"].includes(status)) return "border-red-400/30 bg-red-500/10 text-red-200";
   return "border-gold/30 bg-gold/10 text-gold";
 }
@@ -443,12 +444,12 @@ export function AdminClient() {
     });
   }
 
-  async function updateKyc(id: string, status: "VERIFIED" | "REJECTED") {
+  async function updateKyc(id: string, status: typeof KYC_STATUS.APPROVED | typeof KYC_STATUS.REJECTED) {
     doConfirm({
-      title: status === "VERIFIED" ? "Verify KYC" : "Reject KYC",
+      title: status === KYC_STATUS.APPROVED ? "Verify KYC" : "Reject KYC",
       message: `Set KYC status to ${status.toLowerCase()}? The user will be notified.`,
-      variant: status === "REJECTED" ? "danger" : "default",
-      confirmLabel: status === "VERIFIED" ? "Verify" : "Reject",
+      variant: status === KYC_STATUS.REJECTED ? "danger" : "default",
+      confirmLabel: status === KYC_STATUS.APPROVED ? "Verify" : "Reject",
       onConfirm: async () => {
         setNotice(""); setError("");
         try {
@@ -722,7 +723,7 @@ export function AdminClient() {
                   <td className="py-4 pr-4 text-white">{adminDisplayName(user)}</td>
                   <td className="py-4 pr-4 text-slate-300">{user.email}</td>
                   <td className="py-4 pr-4"><StatusBadge status={user.role} /></td>
-                  <td className="py-4 pr-4">{user.emailVerifiedAt ? <StatusBadge status="VERIFIED" /> : <StatusBadge status="PENDING" />}</td>
+                  <td className="py-4 pr-4">{user.emailVerifiedAt ? <StatusBadge status="APPROVED" /> : <StatusBadge status="PENDING" />}</td>
                   <td className="py-4 pr-4 text-slate-300">{money(user.balance.availableUsd)}</td>
                   <td className="py-4 pr-4 text-slate-400">{new Date(user.createdAt).toLocaleDateString()}</td>
                   <td className="py-4">
@@ -961,10 +962,7 @@ export function AdminClient() {
     return (
       <div className="space-y-6">
         <SectionHeader title="KYC Review" subtitle={`${filteredKyc.length} submissions`}>
-          <SelectFilter value={kycFilter} onChange={setKycFilter} options={[
-            { value: "PENDING", label: "Pending" }, { value: "VERIFIED", label: "Verified" },
-            { value: "REJECTED", label: "Rejected" }, { value: "ALL", label: "All" }
-          ]} />
+          <SelectFilter value={kycFilter} onChange={setKycFilter} options={[...KYC_STATUS_FILTER_OPTIONS]} />
         </SectionHeader>
         <Card className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm">
@@ -977,16 +975,16 @@ export function AdminClient() {
                   <td className="py-4 pr-4 text-white">{adminDisplayName(k.user)}<p className="text-xs text-slate-500">{k.user.email}</p></td>
                   <td className="py-4 pr-4"><StatusBadge status={k.status} /></td>
                   <td className="py-4 pr-4">
-                    {k.status === "PENDING" ? (
+                    {k.status === KYC_STATUS.PENDING ? (
                       <input className="focus-ring w-full max-w-[200px] rounded-md border border-white/10 bg-white/10 px-2 py-1.5 text-xs text-white" onChange={(e) => setDecisionReasons((c) => ({ ...c, [k.id]: e.target.value }))} placeholder={k.reason || "Reason"} value={decisionReasons[k.id] || ""} />
                     ) : <span className="text-slate-400">{k.reason || "-"}</span>}
                   </td>
                   <td className="py-4 pr-4 text-slate-400">{new Date(k.updatedAt).toLocaleDateString()}</td>
                   <td className="py-4">
-                    {k.status === "PENDING" ? (
+                    {k.status === KYC_STATUS.PENDING ? (
                       <div className="flex gap-2">
-                        <button className="focus-ring rounded-md bg-mint px-3 py-2 text-xs font-semibold text-ink" onClick={() => updateKyc(k.id, "VERIFIED")}>Verify</button>
-                        <button className="focus-ring rounded-md border border-red-300/40 px-3 py-2 text-xs font-semibold text-red-100" onClick={() => updateKyc(k.id, "REJECTED")}>Reject</button>
+                        <button className="focus-ring rounded-md bg-mint px-3 py-2 text-xs font-semibold text-ink" onClick={() => updateKyc(k.id, KYC_STATUS.APPROVED)}>Verify</button>
+                        <button className="focus-ring rounded-md border border-red-300/40 px-3 py-2 text-xs font-semibold text-red-100" onClick={() => updateKyc(k.id, KYC_STATUS.REJECTED)}>Reject</button>
                       </div>
                     ) : <span className="text-xs text-slate-500">Reviewed</span>}
                   </td>

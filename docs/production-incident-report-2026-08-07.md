@@ -133,7 +133,7 @@ Run in Render Shell (apps/api working directory) against Neon production DB:
 - npx prisma db execute --schema prisma/schema.prisma --stdin
 - SELECT e.enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'VerificationStatus' ORDER BY e.enumsortorder;
 
-Expected enum values include NOT_SUBMITTED, PENDING, VERIFIED, APPROVED, REJECTED.
+Expected KYC status values for app requests are NOT_SUBMITTED, PENDING, APPROVED, and REJECTED.
 
 ## Render Deployment Action
 

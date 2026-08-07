@@ -9,6 +9,7 @@ import { signAccessToken, signRefreshToken } from "../../lib/tokens.js";
 import { hashPassword, verifyPassword, hashSecret, verifySecret } from "../../lib/password.js";
 import { createAndSendSignupOtp, verifySignupOtp, SIGNUP_OTP_PURPOSE, createAndSendPasswordResetOtp, verifyPasswordResetOtp, PASSWORD_RESET_OTP_PURPOSE } from "../../lib/otp.js";
 import { handleRouteError, sendError } from "../../lib/http-errors.js";
+import { VerificationStatus } from "../../lib/verification-status.js";
 import { requireAuth, type AuthRequest } from "../../middleware/auth.js";
 import { otpRateLimiter } from "../../middleware/otp-rate-limit.js";
 
@@ -91,7 +92,7 @@ const signupHandler = async (req: Request, res: Response) => {
             timezone: "Africa/Lagos"
           }
         },
-        kycChecks: { create: { provider: "manual", status: "NOT_SUBMITTED" } },
+        kycChecks: { create: { provider: "manual", status: VerificationStatus.NOT_SUBMITTED } },
         consents: { create: { type: "RISK_DISCLOSURE", version: "2026-05", ipAddress: req.ip } },
         auditLogs: { create: { action: "USER_REGISTERED", entity: "User", ipAddress: req.ip } }
       }

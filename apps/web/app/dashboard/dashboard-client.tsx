@@ -11,6 +11,7 @@ import SettingsPage from "../../components/dashboard/settings-page";
 import KycPage from "../../components/dashboard/kyc-page";
 import SecurityPage from "../../components/dashboard/security-page";
 import NotificationsPage from "../../components/dashboard/notifications-page";
+import { KYC_STATUS, kycStatusLabel, isApprovedKycStatus, type KycStatus } from "../../lib/verification-status";
 
 /* ── Types matching actual backend API responses ── */
 interface Me { user: { id: string; email: string; role: string; emailVerified?: boolean; profile?: { firstName?: string | null; lastName?: string | null; country?: string | null } } }
@@ -19,7 +20,7 @@ interface InvestmentPlan { name: string; durationDays: number; estimatedYieldMin
 interface Investment { id: string; plan: InvestmentPlan; principalUsd: string; expectedReturnUsd: string; assetSymbol: string; status: string; startedAt: string; maturesAt: string; accruedInterestUsd?: string; currentAccruedValueUsd?: string; progressPercent?: number; daysElapsed?: number; daysRemaining?: number; dailyAccrualUsd?: string; projectedPayoutUsd?: string }
 interface Withdrawal { id: string; amountUsd: string; assetSymbol: string; network: string; destination: string; status: string; createdAt: string; investmentId?: string | null; investment?: { id: string; plan: { name: string }; principalUsd: string; maturesAt: string; status: string } | null }
 interface Deposit { id: string; amountUsd: string; assetSymbol: string; network: string; status: string; depositAddress: string; txHash?: string; createdAt: string; proofUrl?: string }
-interface KycCheck { id: string; status: string; provider: string; createdAt: string }
+interface KycCheck { id: string; status: KycStatus; provider: string; createdAt: string }
 interface ApiNotification { id: string; title: string; body: string; readAt: string | null; createdAt: string }
 interface DepositOption { assetSymbol: string; network: string; label: string; wallet: { id: string; address: string; instructions: string; provider: string } | null }
 
@@ -195,9 +196,9 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
   const weekEarnings = todayEarnings * 7;
   const monthEarnings = todayEarnings * 30;
   const investorLevel = getInvestorLevel(totalInvested);
-  const latestKycStatus = kycChecks.length > 0 ? kycChecks[0].status : "NOT_SUBMITTED";
+  const latestKycStatus = kycChecks.length > 0 ? kycChecks[0].status : KYC_STATUS.NOT_SUBMITTED;
   /* KYC display: derive from same KycCheck.status field used by admin */
-  const kycDisplayText = (latestKycStatus === "VERIFIED" || latestKycStatus === "APPROVED") ? "Approved" : latestKycStatus === "PENDING" ? "Pending" : latestKycStatus === "REJECTED" ? "Rejected" : "Not Submitted";
+  const kycDisplayText = kycStatusLabel(latestKycStatus).replace(" Review", "");
 
   /* ── Withdrawal eligibility: compute per-investment maturity-aware amounts ── */
   const withdrawalEligibility = useMemo(() => {
@@ -362,7 +363,7 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                       { label: "Today's Earnings", value: usd(todayEarnings), icon: "📈", accent: "gold" },
                       { label: "Active Investments", value: String(activeInvestments.length), icon: "📊", accent: "blue" },
                       { label: "Pending Withdrawals", value: usd(pendingWithdrawals), icon: "⏳", accent: "gold" },
-                      { label: "Verification", value: kycDisplayText, icon: (latestKycStatus === "VERIFIED" || latestKycStatus === "APPROVED") ? "✅" : "⚠️", accent: "mint" },
+                      { label: "Verification", value: kycDisplayText, icon: isApprovedKycStatus(latestKycStatus) ? "✅" : "⚠️", accent: "mint" },
                     ].map((s, i) => (
                       <motion.div key={s.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="glass-card group relative overflow-hidden p-5">
                         <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-gradient-to-br from-mint/20 to-mint/5 opacity-60 blur-2xl transition-opacity group-hover:opacity-100" />
@@ -778,7 +779,7 @@ export default function DashboardClient({ initialToken }: { initialToken?: strin
                         { name: "First Withdrawal", icon: "🏦", desc: "Made your first withdrawal", unlocked: withdrawals.length > 0 },
                         { name: "Portfolio Builder", icon: "🔥", desc: "Portfolio reached $1,000", unlocked: totalInvested >= 1000 },
                         { name: "Diversified", icon: "📊", desc: "3+ active investments", unlocked: activeInvestments.length >= 3 },
-                        { name: "Verified", icon: "✅", desc: "Completed KYC verification", unlocked: (latestKycStatus === "VERIFIED" || latestKycStatus === "APPROVED") },
+                        { name: "Verified", icon: "✅", desc: "Completed KYC verification", unlocked: isApprovedKycStatus(latestKycStatus) },
                       ].map((a, i) => (
                         <motion.div key={a.name} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 + i * 0.1 }} className={`achievement-badge ${a.unlocked ? "unlocked" : "locked"}`}>
                           <span className="text-3xl">{a.icon}</span>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { apiRequest } from "../../lib/api";
+import { KYC_STATUS, kycStatusLabel, normalizeKycStatus, type KycStatus } from "../../lib/verification-status";
 
 interface ProfileData {
   user: {
@@ -22,7 +23,7 @@ interface ProfileData {
   };
 }
 
-interface KycStatus {
+interface KycStatusResponse {
   status: string;
 }
 
@@ -32,7 +33,7 @@ function shortDate(d: string) {
 
 export default function ProfilePage() {
   const [data, setData] = useState<ProfileData | null>(null);
-  const [kycStatus, setKycStatus] = useState<string>("NOT_SUBMITTED");
+  const [kycStatus, setKycStatus] = useState<KycStatus>(KYC_STATUS.NOT_SUBMITTED);
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -51,8 +52,8 @@ export default function ProfilePage() {
           country: d.user.profile?.country || "",
         });
       }),
-      apiRequest<{ checks: { status: string }[] }>("/kyc/status").then(d => {
-        setKycStatus(d.checks?.[0]?.status || "NOT_SUBMITTED");
+      apiRequest<{ checks: KycStatusResponse[] }>("/kyc/status").then(d => {
+        setKycStatus(normalizeKycStatus(d.checks?.[0]?.status));
       }).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, []);
@@ -94,8 +95,8 @@ export default function ProfilePage() {
   const user = data?.user;
   const profile = user?.profile;
   const initials = ((profile?.firstName?.[0] || "") + (profile?.lastName?.[0] || "")).toUpperCase() || user?.email?.[0]?.toUpperCase() || "U";
-  const kycDisplayText = kycStatus === "VERIFIED" ? "Approved" : kycStatus === "PENDING" ? "Pending Review" : kycStatus === "REJECTED" ? "Rejected" : "Not Submitted";
-  const kycColor = kycStatus === "VERIFIED" ? "text-emerald-400 bg-emerald-500/10" : kycStatus === "PENDING" ? "text-yellow-400 bg-yellow-500/10" : kycStatus === "REJECTED" ? "text-red-400 bg-red-500/10" : "text-slate-400 bg-white/5";
+  const kycDisplayText = kycStatusLabel(kycStatus);
+  const kycColor = kycStatus === KYC_STATUS.APPROVED ? "text-emerald-400 bg-emerald-500/10" : kycStatus === KYC_STATUS.PENDING ? "text-yellow-400 bg-yellow-500/10" : kycStatus === KYC_STATUS.REJECTED ? "text-red-400 bg-red-500/10" : "text-slate-400 bg-white/5";
 
   return (
     <div className="space-y-6">

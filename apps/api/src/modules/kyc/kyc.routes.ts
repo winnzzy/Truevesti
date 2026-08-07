@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
+import { VerificationStatus } from "../../lib/verification-status.js";
 import { requireAuth, requireEmailVerified, type AuthRequest } from "../../middleware/auth.js";
 
 export const kycRouter = Router();
@@ -23,7 +24,7 @@ kycRouter.post("/manual", requireAuth, requireEmailVerified, async (req: AuthReq
     data: {
       userId: req.user!.id,
       provider: "manual",
-      status: "PENDING",
+      status: VerificationStatus.PENDING,
       reason: input.reason || "User requested KYC review"
     }
   });
@@ -54,7 +55,7 @@ kycRouter.post("/submit", requireAuth, requireEmailVerified, async (req: AuthReq
     const existingPending = await prisma.kycCheck.findFirst({
       where: {
         userId: req.user!.id,
-        status: "PENDING"
+        status: VerificationStatus.PENDING
       }
     });
 
@@ -79,7 +80,7 @@ kycRouter.post("/submit", requireAuth, requireEmailVerified, async (req: AuthReq
       data: {
         userId: req.user!.id,
         provider: "manual",
-        status: "PENDING",
+        status: VerificationStatus.PENDING,
         reason: metadata
       }
     });

@@ -8,6 +8,7 @@ import { getUserBalance } from "../../lib/balances.js";
 import { deleteUserByEmail } from "../../lib/delete-user.js";
 import { sendError } from "../../lib/http-errors.js";
 import { depositDecisionSchema, walletAddressSchema, walletAddressUpdateSchema } from "../../lib/manual-deposits.js";
+import { kycDecisionSchema } from "../../lib/verification-status.js";
 import { requireAuth, requireRole, type AuthRequest } from "../../middleware/auth.js";
 
 export const adminRouter = Router();
@@ -365,10 +366,7 @@ adminRouter.patch("/kyc/:id/decision", async (req: AuthRequest, res: Response) =
   const kycId = String(req.params.id);
   console.log("KYC approval requested:", kycId);
 
-  const input = z.object({
-    status: z.enum(["APPROVED", "REJECTED", "PENDING"]),
-    reason: z.string().max(1000).optional()
-  }).parse(req.body);
+  const input = kycDecisionSchema.parse(req.body);
 
   let kyc;
   try {

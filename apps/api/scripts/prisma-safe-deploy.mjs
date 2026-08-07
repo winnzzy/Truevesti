@@ -76,6 +76,33 @@ function looksLikeBaselineConflict(output) {
   );
 }
 
+function looksLikeAdvisoryLockTimeout(output) {
+  return (
+    output.includes("P1002") ||
+    output.includes("Timed out trying to acquire a postgres advisory lock")
+  );
+}
+
+function looksLikeOtherPrismaError(output) {
+  const prismaErrorCodes = output.match(/\bP\d{4}\b/g) ?? [];
+  return prismaErrorCodes.some((code) => code !== "P1002");
+}
+
+function isOnlyAdvisoryLockTimeout(output) {
+  return (
+    looksLikeAdvisoryLockTimeout(output) &&
+    !looksLikeBaselineConflict(output) &&
+    !looksLikeOtherPrismaError(output)
+  );
+}
+
+function warnAndContinueOnAdvisoryLock() {
+  console.warn(
+    "Prisma migrate deploy could not acquire the Postgres advisory lock during startup. " +
+      "Continuing API boot; migrations can be retried by the next deploy or a manual migration run."
+  );
+}
+
 function recoverBaselineHistory() {
   console.log("Detected Prisma migration history drift; applying non-destructive baseline recovery.");
 
@@ -97,10 +124,21 @@ if (deployResult.status === 0) {
 }
 
 const combinedOutput = `${deployResult.stdout ?? ""}\n${deployResult.stderr ?? ""}`;
+if (isOnlyAdvisoryLockTimeout(combinedOutput)) {
+  warnAndContinueOnAdvisoryLock();
+  process.exit(0);
+}
+
 if (!looksLikeBaselineConflict(combinedOutput)) {
   process.exit(deployResult.status ?? 1);
 }
 
 recoverBaselineHistory();
 const retryResult = tryDeploy();
+const retryOutput = `${retryResult.stdout ?? ""}\n${retryResult.stderr ?? ""}`;
+if (retryResult.status !== 0 && isOnlyAdvisoryLockTimeout(retryOutput)) {
+  warnAndContinueOnAdvisoryLock();
+  process.exit(0);
+}
+
 process.exit(retryResult.status ?? 1);
